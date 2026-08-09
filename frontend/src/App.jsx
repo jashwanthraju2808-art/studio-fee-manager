@@ -1,115 +1,34 @@
-import { useEffect, useState } from "react";
-import { getMembers, searchMembers } from "./api/memberApi";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import AuthGuard   from "./components/AuthGuard";
+import Layout      from "./components/Layout";
+import Login       from "./pages/Login";
+import Dashboard   from "./pages/Dashboard";
+import Members     from "./pages/Members";
+import Payments    from "./pages/Payments";
+import Attendance  from "./pages/Attendance";
 
-function App() {
-  const [members, setMembers] = useState([]);
-  const [search, setSearch] = useState("");
-
-  useEffect(() => {
-    loadMembers();
-  }, []);
-
-  const loadMembers = async () => {
-    try {
-      const response = await getMembers();
-      setMembers(response.data);
-    } catch (error) {
-      console.error("Error loading members:", error);
-      alert("Unable to connect to FastAPI backend.");
-    }
-  };
-
-  const handleSearch = async (value) => {
-    setSearch(value);
-
-    if (value.trim() === "") {
-      loadMembers();
-      return;
-    }
-
-    try {
-      const response = await searchMembers(value);
-      setMembers(response.data);
-    } catch (error) {
-      console.error("Search error:", error);
-    }
-  };
-
+export default function App() {
   return (
-    <div className="container mt-5">
+    <BrowserRouter>
+      <Routes>
+        {/* Public */}
+        <Route path="/login" element={<Login />} />
 
-      <h2 className="text-center mb-4">
-        🧘 Studio Fee Manager
-      </h2>
-
-      <div className="mb-3">
-        <input
-          type="text"
-          className="form-control"
-          placeholder="🔍 Search by Name or Phone"
-          value={search}
-          onChange={(e) => handleSearch(e.target.value)}
-        />
-      </div>
-
-      <table className="table table-bordered table-hover shadow">
-        <thead className="table-dark">
-          <tr>
-            <th>ID</th>
-            <th>First Name</th>
-            <th>Last Name</th>
-            <th>Phone</th>
-            <th>Fee</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-
-        <tbody>
-          {members.length > 0 ? (
-            members.map((member) => (
-              <tr key={member.id}>
-                <td>{member.id}</td>
-                <td>{member.first_name}</td>
-                <td>{member.last_name}</td>
-                <td>{member.phone_number}</td>
-                <td>₹{member.fee}</td>
-
-                <td>
-                  <button
-                    className="btn btn-primary btn-sm me-2"
-                    onClick={() => alert(`Edit Member ID: ${member.id}`)}
-                  >
-                    ✏️ Edit
-                  </button>
-
-                  <button
-                    className="btn btn-danger btn-sm me-2"
-                    onClick={() => alert(`Delete Member ID: ${member.id}`)}
-                  >
-                    🗑 Delete
-                  </button>
-
-                  <button
-                    className="btn btn-success btn-sm"
-                    onClick={() => alert(`Payment for ${member.first_name}`)}
-                  >
-                    💰 Payment
-                  </button>
-                </td>
-              </tr>
-            ))
-          ) : (
-            <tr>
-              <td colSpan="6" className="text-center">
-                No members found
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-
-    </div>
+        {/* Protected — all pages inside Layout */}
+        <Route
+          path="/"
+          element={
+            <AuthGuard>
+              <Layout />
+            </AuthGuard>
+          }
+        >
+          <Route index           element={<Dashboard />}  />
+          <Route path="members"    element={<Members />}    />
+          <Route path="payments"   element={<Payments />}   />
+          <Route path="attendance" element={<Attendance />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   );
 }
-
-export default App;

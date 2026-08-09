@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}Students – Yoga Fee Manager{% endblock %}
+{% block page_title %}Students{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">👥 All Students</h2>
+    <div class="header-actions">
+      <input type="text" id="studentSearch" class="search-input" placeholder="🔍 Search students…"/>
+      <button class="btn btn-primary" onclick="openAddModal()">+ Add Student</button>
+    </div>
+  </div>
+
+  <div class="table-wrapper">
+    <table class="data-table" id="studentsTable">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Name</th>
+          <th>Phone</th>
+          <th>Email</th>
+          <th>Monthly Fee</th>
+          <th>Joined</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in students %}
+        <tr data-name="{{ s.name|lower }}">
+          <td class="muted">{{ loop.index }}</td>
+          <td><strong>{{ s.name }}</strong></td>
+          <td>{{ s.phone or "—" }}</td>
+          <td class="muted">{{ s.email or "—" }}</td>
+          <td class="text-green"><strong>₹{{ "%.0f"|format(s.fee_amount) }}</strong></td>
+          <td class="muted">{{ s.join_date }}</td>
+          <td>
+            {% if s.active %}
+              <span class="badge badge-green">Active</span>
+            {% else %}
+              <span class="badge badge-gray">Inactive</span>
+            {% endif %}
+          </td>
+          <td>
+            <button class="btn btn-sm btn-outline" onclick="openEditModal({{ s.id }})">✏️ Edit</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteStudent({{ s.id }}, '{{ s.name }}')">🗑️</button>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="empty-state">No students added yet. Click "+ Add Student" to get started.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Add/Edit Student Modal -->
+<div class="modal" id="studentModal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 id="modalTitle">Add Student</h3>
+      <button class="modal-close" onclick="closeModal('studentModal')">✕</button>
+    </div>
+    <form id="studentForm">
+      <input type="hidden" id="studentId"/>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Full Name *</label>
+          <input type="text" id="sName" class="form-control" placeholder="e.g. Priya Sharma" required/>
+        </div>
+        <div class="form-group">
+          <label>Phone</label>
+          <input type="tel" id="sPhone" class="form-control" placeholder="e.g. 9876543210"/>
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="sEmail" class="form-control" placeholder="e.g. priya@email.com"/>
+        </div>
+        <div class="form-group">
+          <label>Monthly Fee (₹) *</label>
+          <input type="number" id="sFee" class="form-control" placeholder="e.g. 1500" min="0" required/>
+        </div>
+        <div class="form-group">
+          <label>Joining Date *</label>
+          <input type="date" id="sJoinDate" class="form-control" required/>
+        </div>
+        <div class="form-group">
+          <label>Status</label>
+          <select id="sActive" class="form-control">
+            <option value="1">Active</option>
+            <option value="0">Inactive</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Address</label>
+        <textarea id="sAddress" class="form-control" rows="2" placeholder="Optional"></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" onclick="closeModal('studentModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="saveBtn">Save Student</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/students.js') }}"></script>
+{% endblock %}

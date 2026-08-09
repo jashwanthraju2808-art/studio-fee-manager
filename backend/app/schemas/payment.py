@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import date, datetime
+from typing import Optional
 
 from pydantic import BaseModel
 
@@ -6,14 +7,18 @@ from pydantic import BaseModel
 class PaymentCreate(BaseModel):
     member_id: int
     amount: int
+    month: str          # "YYYY-MM"
     payment_date: date
+    note: Optional[str] = None
 
 
 class PaymentResponse(BaseModel):
     id: int
     member_id: int
     amount: int
+    month: str
     payment_date: date
+    note: Optional[str] = None
+    created_at: datetime
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}

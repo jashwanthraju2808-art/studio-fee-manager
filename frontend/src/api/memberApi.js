@@ -1,10 +1,8 @@
-import axios from "axios";
+import API from "./axios";
 
-const API = axios.create({
-  baseURL: "http://127.0.0.1:8000",
-});
-
-export const getMembers = () => API.get("/members/");
-
-export const searchMembers = (query) =>
-  API.get(`/members/search?q=${query}`);
+export const getMembers    = (params = "")   => API.get(`/members/${params}`);
+export const searchMembers = (q)             => API.get(`/members/search?q=${encodeURIComponent(q)}`);
+export const getMember     = (id)            => API.get(`/members/${id}`);
+export const createMember  = (data)          => API.post("/members/", data);
+export const updateMember  = (id, data)      => API.put(`/members/${id}`, data);
+export const deleteMember  = (id)            => API.delete(`/members/${id}`);

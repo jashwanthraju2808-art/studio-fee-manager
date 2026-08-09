@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Attendance – Yoga Fee Manager{% endblock %}
+{% block page_title %}Attendance{% endblock %}
+
+{% block content %}
+
+<div class="card">
+  <div class="card-header">
+    <h2 class="card-title">📅 Mark Attendance</h2>
+    <div class="header-actions">
+      <input type="date" id="attDate" class="form-control" value="{{ selected_date }}"
+             onchange="location.href='?date='+this.value"/>
+    </div>
+  </div>
+
+  {% if students %}
+  <div class="att-summary">
+    <span id="presentCount" class="badge badge-green">
+      {{ present_ids|length }} Present
+    </span>
+    <span class="badge badge-red">
+      {{ students|length - present_ids|length }} Absent
+    </span>
+    <span class="muted">of {{ students|length }} students</span>
+  </div>
+
+  <form id="attForm">
+    <input type="hidden" name="date" value="{{ selected_date }}"/>
+    <div class="att-grid">
+      {% for s in students %}
+      <label class="att-card {% if s.id in present_ids %}present{% endif %}" id="card-{{ s.id }}">
+        <input type="checkbox"
+               name="present"
+               value="{{ s.id }}"
+               {% if s.id in present_ids %}checked{% endif %}
+               onchange="toggleCard(this)"/>
+        <div class="att-avatar">{{ s.name[0].upper() }}</div>
+        <div class="att-name">{{ s.name }}</div>
+        <div class="att-status">
+          {% if s.id in present_ids %}✅ Present{% else %}❌ Absent{% endif %}
+        </div>
+      </label>
+      {% endfor %}
+    </div>
+
+    <div class="att-actions">
+      <button type="button" class="btn btn-outline" onclick="selectAll(true)">✅ Mark All Present</button>
+      <button type="button" class="btn btn-outline" onclick="selectAll(false)">❌ Mark All Absent</button>
+      <button type="submit" class="btn btn-primary">💾 Save Attendance</button>
+    </div>
+  </form>
+  {% else %}
+  <p class="empty-state">No active students found. <a href="{{ url_for('students') }}">Add students</a> first.</p>
+  {% endif %}
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const ALL_STUDENT_IDS = {{ students | map(attribute='id') | list | tojson }};
+const ATT_DATE = "{{ selected_date }}";
+</script>
+<script src="{{ url_for('static', filename='js/attendance.js') }}"></script>
+{% endblock %}

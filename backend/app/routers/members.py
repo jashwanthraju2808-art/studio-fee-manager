@@ -1,153 +1,92 @@
+from typing import List, Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.database.dependencies import get_db
 from app.models.member import Member
-from app.schemas.member import MemberCreate, MemberUpdate
+from app.schemas.member import MemberCreate, MemberUpdate, MemberResponse
 
-router = APIRouter(
-    prefix="/members",
-    tags=["Members"]
-)
+router = APIRouter(prefix="/members", tags=["Members"])
 
 
-# Get all active members
-@router.get("/")
-def get_members(db: Session = Depends(get_db)):
-    return db.query(Member).filter(Member.is_active == True).all()
+def _q(db: Session):
+    """Base query: active members with batch eager-loaded."""
+    return (
+        db.query(Member)
+        .options(joinedload(Member.batch))
+        .filter(Member.is_active == True)  # noqa: E712
+    )
 
 
-# Search members
-@router.get("/search")
-def search_members(
-    q: str = Query(...),
-    db: Session = Depends(get_db)
+@router.get("/", response_model=List[MemberResponse])
+def get_members(
+    batch_id: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
 ):
-    return db.query(Member).filter(
-        Member.is_active == True,
-        (
-            Member.first_name.ilike(f"%{q}%") |
-            Member.last_name.ilike(f"%{q}%") |
-            Member.phone_number.ilike(f"%{q}%")
+    q = _q(db)
+    if batch_id:
+        q = q.filter(Member.batch_id == batch_id)
+    return q.all()
+
+
+@router.get("/search", response_model=List[MemberResponse])
+def search_members(q: str = Query(..., min_length=1), db: Session = Depends(get_db)):
+    return (
+        _q(db)
+        .filter(
+            Member.first_name.ilike(f"%{q}%")
+            | Member.last_name.ilike(f"%{q}%")
+            | Member.phone_number.ilike(f"%{q}%")
         )
-    ).all()
+        .all()
+    )
 
 
-# Get member by ID
-@router.get("/{member_id}")
+@router.get("/{member_id}", response_model=MemberResponse)
 def get_member(member_id: int, db: Session = Depends(get_db)):
-    member = db.query(Member).filter(
-        Member.id == member_id,
-        Member.is_active == True
-    ).first()
-
-    if member is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Member not found"
-        )
-
+    member = _q(db).filter(Member.id == member_id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
     return member
 
 
-# Add member
-@router.post("/")
+@router.post("/", response_model=MemberResponse, status_code=201)
 def add_member(member: MemberCreate, db: Session = Depends(get_db)):
-
-    existing_member = db.query(Member).filter(
-        Member.phone_number == member.phone_number
-    ).first()
-
-    if existing_member:
-        raise HTTPException(
-            status_code=400,
-            detail="Phone number already exists"
-        )
-
-    new_member = Member(
-        first_name=member.first_name,
-        last_name=member.last_name,
-        age=member.age,
-        phone_number=member.phone_number,
-        email=member.email,
-        fee=member.fee,
-        is_active=True
-    )
-
+    if db.query(Member).filter(Member.phone_number == member.phone_number).first():
+        raise HTTPException(status_code=400, detail="Phone number already exists")
+    new_member = Member(**member.model_dump())
     db.add(new_member)
     db.commit()
     db.refresh(new_member)
-
-    return {
-        "message": "Member added successfully",
-        "member": new_member
-    }
+    # reload with batch
+    return _q(db).filter(Member.id == new_member.id).first()
 
 
-# Update member
-@router.put("/{member_id}")
-def update_member(
-    member_id: int,
-    member: MemberUpdate,
-    db: Session = Depends(get_db)
-):
-    existing_member = db.query(Member).filter(
-        Member.id == member_id,
-        Member.is_active == True
-    ).first()
-
-    if existing_member is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Member not found"
-        )
-
-    # Check if another member already has this phone number
+@router.put("/{member_id}", response_model=MemberResponse)
+def update_member(member_id: int, member: MemberUpdate, db: Session = Depends(get_db)):
+    existing = _q(db).filter(Member.id == member_id).first()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Member not found")
     phone_owner = db.query(Member).filter(
         Member.phone_number == member.phone_number,
-        Member.id != member_id
+        Member.id != member_id,
     ).first()
-
     if phone_owner:
-        raise HTTPException(
-            status_code=400,
-            detail="Phone number already exists"
-        )
-
-    existing_member.first_name = member.first_name
-    existing_member.last_name = member.last_name
-    existing_member.age = member.age
-    existing_member.phone_number = member.phone_number
-    existing_member.email = member.email
-    existing_member.fee = member.fee
-
+        raise HTTPException(status_code=400, detail="Phone number already exists")
+    for field, value in member.model_dump().items():
+        setattr(existing, field, value)
     db.commit()
-    db.refresh(existing_member)
-
-    return {
-        "message": "Member updated successfully",
-        "member": existing_member
-    }
+    return _q(db).filter(Member.id == member_id).first()
 
 
-# Soft delete member
 @router.delete("/{member_id}")
 def delete_member(member_id: int, db: Session = Depends(get_db)):
     member = db.query(Member).filter(
-        Member.id == member_id,
-        Member.is_active == True
+        Member.id == member_id, Member.is_active == True  # noqa: E712
     ).first()
-
-    if member is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Member not found"
-        )
-
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
     member.is_active = False
-
     db.commit()
-
-    return {
-        "message": "Member marked as inactive"
-    }
+    return {"message": "Member marked as inactive"}

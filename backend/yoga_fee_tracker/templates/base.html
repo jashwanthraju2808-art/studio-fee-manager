@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{% block title %}Yoga Fee Manager{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+</head>
+<body>
+
+<!-- Sidebar -->
+<nav class="sidebar">
+  <div class="sidebar-brand">
+    <span class="brand-icon">🧘</span>
+    <span class="brand-text">Yoga Studio</span>
+  </div>
+  <ul class="nav-links">
+    <li><a href="{{ url_for('dashboard') }}" class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">
+      <span class="nav-icon">📊</span> Dashboard
+    </a></li>
+    <li><a href="{{ url_for('students') }}" class="nav-link {% if request.endpoint == 'students' %}active{% endif %}">
+      <span class="nav-icon">👥</span> Students
+    </a></li>
+    <li><a href="{{ url_for('payments') }}" class="nav-link {% if request.endpoint == 'payments' %}active{% endif %}">
+      <span class="nav-icon">💰</span> Payments
+    </a></li>
+    <li><a href="{{ url_for('attendance') }}" class="nav-link {% if request.endpoint == 'attendance' %}active{% endif %}">
+      <span class="nav-icon">📅</span> Attendance
+    </a></li>
+  </ul>
+  <div class="sidebar-footer">
+    <span>Free &amp; Open Source</span>
+  </div>
+</nav>
+
+<!-- Main content -->
+<div class="main-wrapper">
+  <header class="topbar">
+    <div class="topbar-left">
+      <button class="hamburger" id="sidebarToggle">&#9776;</button>
+      <h1 class="page-title">{% block page_title %}Dashboard{% endblock %}</h1>
+    </div>
+    <div class="topbar-right">
+      <span class="today-badge">📆 {{ now }}</span>
+    </div>
+  </header>
+
+  <main class="content">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for cat, msg in messages %}
+          <div class="alert alert-{{ cat }}">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+</div>
+
+<!-- Global modal backdrop -->
+<div class="modal-backdrop" id="modalBackdrop"></div>
+
+<script src="{{ url_for('static', filename='js/main.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

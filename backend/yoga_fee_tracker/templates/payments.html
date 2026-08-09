@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Payments – Yoga Fee Manager{% endblock %}
+{% block page_title %}Payments{% endblock %}
+
+{% block content %}
+
+<!-- Month selector -->
+<div class="month-bar card">
+  <div class="month-tabs">
+    {% for m in month_list %}
+    <a href="{{ url_for('payments', month=m) }}"
+       class="month-tab {% if m == selected_month %}active{% endif %}">
+      {{ m }}
+    </a>
+    {% endfor %}
+  </div>
+  <button class="btn btn-primary" onclick="openPayModal()">+ Record Payment</button>
+</div>
+
+<!-- Summary row -->
+<div class="stats-grid two">
+  <div class="stat-card blue">
+    <div class="stat-icon">✅</div>
+    <div class="stat-info">
+      <p class="stat-label">Paid</p>
+      <p class="stat-value">{{ paid_students|length }} students</p>
+    </div>
+  </div>
+  <div class="stat-card red">
+    <div class="stat-icon">⏳</div>
+    <div class="stat-info">
+      <p class="stat-label">Unpaid</p>
+      <p class="stat-value">{{ unpaid_students|length }} students</p>
+    </div>
+  </div>
+</div>
+
+<div class="two-col">
+  <!-- Paid students -->
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title">✅ Paid – {{ selected_month }}</h2>
+      <span class="badge badge-green">{{ paid_students|length }}</span>
+    </div>
+    {% if paid_students %}
+    <div class="table-wrapper">
+      <table class="data-table">
+        <thead>
+          <tr><th>Name</th><th>Fee</th><th>Paid</th><th>Date</th><th>Note</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for s in paid_students %}
+          <tr>
+            <td><strong>{{ s.name }}</strong><br/><small class="muted">{{ s.phone or "" }}</small></td>
+            <td class="muted">₹{{ "%.0f"|format(s.fee_amount) }}</td>
+            <td class="text-green"><strong>₹{{ "%.0f"|format(s.paid_amount) }}</strong></td>
+            <td class="muted">{{ s.paid_date }}</td>
+            <td class="muted">{{ s.note or "—" }}</td>
+            <td>
+              <button class="btn btn-sm btn-danger" onclick="deletePayment({{ s.payment_id }})">🗑️</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="empty-state">No payments recorded for this month yet.</p>
+    {% endif %}
+  </div>
+
+  <!-- Unpaid students -->
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title">🔴 Unpaid – {{ selected_month }}</h2>
+      <span class="badge badge-red">{{ unpaid_students|length }}</span>
+    </div>
+    {% if unpaid_students %}
+    <ul class="simple-list">
+      {% for s in unpaid_students %}
+      <li class="simple-list-item">
+        <div>
+          <strong>{{ s.name }}</strong>
+          {% if s.phone %}<br/><small class="muted">{{ s.phone }}</small>{% endif %}
+        </div>
+        <div class="item-actions">
+          <span class="amount-badge">₹{{ "%.0f"|format(s.fee_amount) }}</span>
+          <button class="btn btn-sm btn-primary"
+                  onclick="quickPay({{ s.id }}, '{{ s.name }}', {{ s.fee_amount }})">
+            Pay
+          </button>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty-state">🎉 Everyone has paid for {{ selected_month }}!</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Record Payment Modal -->
+<div class="modal" id="payModal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Record Payment</h3>
+      <button class="modal-close" onclick="closeModal('payModal')">✕</button>
+    </div>
+    <form id="payForm">
+      <div class="form-grid">
+        <div class="form-group full">
+          <label>Student *</label>
+          <select id="pStudent" class="form-control" required>
+            <option value="">— Select student —</option>
+            {% for s in all_students %}
+            <option value="{{ s.id }}">{{ s.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Amount (₹) *</label>
+          <input type="number" id="pAmount" class="form-control" placeholder="e.g. 1500" min="1" required/>
+        </div>
+        <div class="form-group">
+          <label>Month *</label>
+          <input type="month" id="pMonth" class="form-control" value="{{ selected_month }}" required/>
+        </div>
+        <div class="form-group">
+          <label>Payment Date *</label>
+          <input type="date" id="pDate" class="form-control" required/>
+        </div>
+        <div class="form-group">
+          <label>Note</label>
+          <input type="text" id="pNote" class="form-control" placeholder="Optional note"/>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" onclick="closeModal('payModal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Payment</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const SELECTED_MONTH = "{{ selected_month }}";
+</script>
+<script src="{{ url_for('static', filename='js/payments.js') }}"></script>
+{% endblock %}

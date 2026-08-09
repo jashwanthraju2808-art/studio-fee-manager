@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% block title %}Dashboard – Yoga Fee Manager{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<!-- Stat cards -->
+<div class="stats-grid">
+  <div class="stat-card green">
+    <div class="stat-icon">👥</div>
+    <div class="stat-info">
+      <p class="stat-label">Active Students</p>
+      <p class="stat-value">{{ total_students }}</p>
+    </div>
+  </div>
+  <div class="stat-card blue">
+    <div class="stat-icon">✅</div>
+    <div class="stat-info">
+      <p class="stat-label">Collected This Month</p>
+      <p class="stat-value">₹{{ "%.0f"|format(total_collected) }}</p>
+    </div>
+  </div>
+  <div class="stat-card purple">
+    <div class="stat-icon">🎯</div>
+    <div class="stat-info">
+      <p class="stat-label">Expected This Month</p>
+      <p class="stat-value">₹{{ "%.0f"|format(total_expected) }}</p>
+    </div>
+  </div>
+  <div class="stat-card {% if pending > 0 %}red{% else %}green{% endif %}">
+    <div class="stat-icon">⏳</div>
+    <div class="stat-info">
+      <p class="stat-label">Pending Dues</p>
+      <p class="stat-value">₹{{ "%.0f"|format(pending) }}</p>
+    </div>
+  </div>
+</div>
+
+<!-- Charts + Unpaid -->
+<div class="two-col">
+  <!-- Monthly bar chart -->
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title">📈 Last 6 Months Collection</h2>
+    </div>
+    <div class="chart-wrapper">
+      <canvas id="monthlyChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Unpaid this month -->
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title">🔴 Unpaid – {{ current_month }}</h2>
+      <span class="badge badge-red">{{ unpaid_students|length }}</span>
+    </div>
+    {% if unpaid_students %}
+    <ul class="simple-list">
+      {% for s in unpaid_students %}
+      <li class="simple-list-item">
+        <div>
+          <strong>{{ s.name }}</strong>
+          {% if s.phone %}<br/><small class="muted">{{ s.phone }}</small>{% endif %}
+        </div>
+        <span class="amount-badge">₹{{ "%.0f"|format(s.fee_amount) }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty-state">🎉 All students have paid this month!</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Recent payments -->
+<div class="card mt-4">
+  <div class="card-header">
+    <h2 class="card-title">🕐 Recent Payments</h2>
+    <a href="{{ url_for('payments') }}" class="btn btn-sm btn-outline">View All</a>
+  </div>
+  {% if recent_payments %}
+  <div class="table-wrapper">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Student</th>
+          <th>Month</th>
+          <th>Amount</th>
+          <th>Paid On</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in recent_payments %}
+        <tr>
+          <td><strong>{{ p.student_name }}</strong></td>
+          <td>{{ p.month }}</td>
+          <td class="text-green">₹{{ "%.0f"|format(p.amount) }}</td>
+          <td>{{ p.paid_date }}</td>
+          <td class="muted">{{ p.note or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty-state">No payments recorded yet.</p>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const labels  = {{ monthly_summary | map(attribute='month') | list | tojson }};
+const values  = {{ monthly_summary | map(attribute='collected') | list | tojson }};
+
+const ctx = document.getElementById('monthlyChart').getContext('2d');
+new Chart(ctx, {
+  type: 'bar',
+  data: {
+    labels,
+    datasets: [{
+      label: 'Amount Collected (₹)',
+      data: values,
+      backgroundColor: 'rgba(99,102,241,0.7)',
+      borderColor: 'rgba(99,102,241,1)',
+      borderWidth: 2,
+      borderRadius: 6
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      y: { beginAtZero: true, ticks: { callback: v => '₹' + v } }
+    }
+  }
+});
+</script>
+{% endblock %}
