@@ -19,7 +19,10 @@ export default function Login() {
       params.append("username", username.trim());
       params.append("password", password);
 
-      const res = await axios.post("http://127.0.0.1:8000/auth/login", params, {
+      const res = await axios.post(
+  "https://antar-yoga-api.onrender.com/auth/login",
+  params,
+  {
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
       });
 

@@ -7,7 +7,7 @@ export const getStudioInfo = () =>
   API.get("/studio/info");
 
 export const getLogoUrl = () =>
-  "http://127.0.0.1:8000/studio/logo";
+  `${API.defaults.baseURL}/studio/logo`;
 
 export const uploadLogo = (file) => {
   const form = new FormData();
