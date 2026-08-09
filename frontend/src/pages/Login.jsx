@@ -104,7 +104,6 @@ export default function Login() {
         </form>
 
         <p style={{ textAlign: "center", marginTop: 20, fontSize: "0.78rem", color: "#bbb" }}>
-          Default: admin / antar@2026
         </p>
       </div>
     </div>
