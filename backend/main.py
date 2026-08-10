@@ -13,6 +13,7 @@ from app.routers.dashboard     import router as dashboard_router
 from app.routers.batches       import router as batch_router
 from app.routers.notifications import router as notification_router
 from app.routers.studio        import router as studio_router
+from app.routers.users        import router as users_router
 
 app = FastAPI(
     title="Studio Fee Manager API",
@@ -44,6 +45,7 @@ app.include_router(notification_router, **protected)
 
 # Studio router handles authentication per endpoint
 app.include_router(studio_router)
+app.include_router(users_router)
 
 # Serve uploaded files (logos etc.)
 uploads_dir = Path(__file__).parent / "uploads"

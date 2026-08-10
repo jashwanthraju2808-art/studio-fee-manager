@@ -48,7 +48,11 @@ def login(
 
 @router.get("/me")
 def get_me(current_user: User = Depends(get_current_user)):
-    return {"id": current_user.id, "username": current_user.username}
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "role": current_user.role,
+    }
 
 
 @router.post("/change-password")
@@ -64,3 +68,137 @@ def change_password(
     current_user.hashed_password = hash_password(body.new_password)
     db.commit()
     return {"message": "Password changed successfully"}
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    role: str = "staff"
+
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    role: str
+    is_active: bool
+
+
+def require_admin(current_user: User = Depends(get_current_user)):
+    if current_user.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+        )
+    return current_user
+
+
+@router.get("/users", response_model=list[UserResponse])
+def get_users(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    return db.query(User).order_by(User.id).all()
+
+
+@router.post("/users", response_model=UserResponse)
+def create_user(
+    body: CreateUserRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    username = body.username.strip()
+
+    if not username:
+        raise HTTPException(
+            status_code=400,
+            detail="Username is required",
+        )
+
+    if len(body.password) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 6 characters",
+        )
+
+    if body.role not in ("admin", "staff"):
+        raise HTTPException(
+            status_code=400,
+            detail="Role must be admin or staff",
+        )
+
+    existing = db.query(User).filter(User.username == username).first()
+
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail="Username already exists",
+        )
+
+    from app.core.auth import hash_password
+
+    user = User(
+        username=username,
+        hashed_password=hash_password(body.password),
+        role=body.role,
+        is_active=True,
+    )
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return user
+
+
+@router.put("/users/{user_id}/status")
+def update_user_status(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found",
+        )
+
+    if user.id == current_user.id:
+        raise HTTPException(
+            status_code=400,
+            detail="You cannot deactivate your own account",
+        )
+
+    user.is_active = not user.is_active
+    db.commit()
+
+    return {
+        "message": "User status updated",
+        "is_active": user.is_active,
+    }
+
+
+@router.delete("/users/{user_id}")
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found",
+        )
+
+    if user.id == current_user.id:
+        raise HTTPException(
+            status_code=400,
+            detail="You cannot delete your own account",
+        )
+
+    db.delete(user)
+    db.commit()
+
+    return {"message": "User deleted successfully"}

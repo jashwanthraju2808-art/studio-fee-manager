@@ -1,12 +1,14 @@
 import { useEffect, useState, useRef } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { getLogoUrl, uploadLogo } from "../api/studioApi";
+import API from "../api/axios";
 
 const NAV = [
-  { to: "/",           icon: "📊", label: "Dashboard"  },
-  { to: "/members",    icon: "👥", label: "Members"    },
-  { to: "/payments",   icon: "💰", label: "Payments"   },
+  { to: "/",           icon: "📊", label: "Dashboard" },
+  { to: "/members",    icon: "👥", label: "Members" },
+  { to: "/payments",   icon: "💰", label: "Payments" },
   { to: "/attendance", icon: "📅", label: "Attendance" },
+  { to: "/users",      icon: "👤", label: "Users" },
 ];
 
 export default function Layout() {
@@ -15,6 +17,7 @@ export default function Layout() {
   const fileRef = useRef();
   const navigate = useNavigate();
   const username = localStorage.getItem("username") || "admin";
+const [userRole, setUserRole] = useState(null);
 
   function handleLogout() {
     localStorage.removeItem("token");
@@ -24,8 +27,17 @@ export default function Layout() {
 
   // Try loading the logo on mount
   useEffect(() => {
-    setLogoUrl(getLogoUrl() + "?t=" + Date.now());
-  }, []);
+  async function loadCurrentUser() {
+    try {
+      const response = await API.get("/auth/me");
+      setUserRole(response.data.role);
+    } catch {
+      setUserRole(null);
+    }
+  }
+
+  loadCurrentUser();
+}, []);
 
   async function handleLogoUpload(e) {
     const file = e.target.files[0];
@@ -78,7 +90,9 @@ export default function Layout() {
         </div>
 
         <nav>
-          {NAV.map(({ to, icon, label }) => (
+          {NAV
+  .filter(({ to }) => true)
+  .map(({ to, icon, label }) => (
             <NavLink
               key={to}
               to={to}
