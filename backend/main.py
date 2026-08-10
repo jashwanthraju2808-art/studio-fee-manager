@@ -26,6 +26,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
+        "https://studio-fee-manager.onrender.com",
         "https://antar-yoga.onrender.com",
     ],
     allow_credentials=True,
