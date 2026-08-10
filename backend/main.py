@@ -1,4 +1,3 @@
-```python
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -67,5 +66,3 @@ def home():
 @app.get("/health", tags=["Health"])
 def health():
     return {"status": "healthy"}
-```
-
