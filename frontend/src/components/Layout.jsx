@@ -27,18 +27,63 @@ const [userRole, setUserRole] = useState(null);
 
   // Try loading the logo on mount
   useEffect(() => {
-  async function loadCurrentUser() {
-    try {
-      const response = await API.get("/auth/me");
-      setUserRole(response.data.role);
-    } catch {
-      setUserRole(null);
+    async function loadCurrentUser() {
+      try {
+        const response = await API.get("/auth/me");
+        setUserRole(response.data.role);
+      } catch {
+        setUserRole(null);
+      }
     }
-  }
 
-  loadCurrentUser();
-}, []);
+    loadCurrentUser();
+  }, []);
 
+  // Auto logout after 30 minutes of inactivity
+  useEffect(() => {
+    const INACTIVITY_LIMIT = 30 * 60 * 1000; // 1 minute for testing
+    let timer;
+
+    const logoutForInactivity = () => {
+      localStorage.removeItem("token");
+      localStorage.removeItem("username");
+      window.location.href = "/login";
+    };
+
+    const resetTimer = () => {
+      clearTimeout(timer);
+
+      // Only run timer when user is logged in
+      if (localStorage.getItem("token")) {
+        timer = setTimeout(logoutForInactivity, INACTIVITY_LIMIT);
+      }
+    };
+
+    const activityEvents = [
+      "mousedown",
+      "mousemove",
+      "keydown",
+      "scroll",
+      "touchstart",
+      "click",
+    ];
+
+    activityEvents.forEach((event) => {
+      window.addEventListener(event, resetTimer);
+    });
+
+    resetTimer();
+
+    return () => {
+      clearTimeout(timer);
+
+      activityEvents.forEach((event) => {
+        window.removeEventListener(event, resetTimer);
+      });
+    };
+  }, []);
+
+  
   async function handleLogoUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
