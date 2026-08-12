@@ -119,49 +119,45 @@ def get_dashboard(
     # UNPAID / PARTIALLY PAID MEMBERS
     #
     # Example:
-    # Fee  = 1500
-    # Paid = 1000
-    # Due  = 500
+    # Monthly fee = 1500
+    # Paid         = 1000
+    # Balance      = 500
     #
-    # The member must appear in unpaid_members.
+    # The member MUST appear in unpaid_members.
     # ---------------------------------------------------------
 
-    # ---------------------------------------------------------
-# UNPAID / PARTIALLY PAID MEMBERS
-# ---------------------------------------------------------
-
-active_members = (
-    db.query(Member)
-    .filter(Member.is_active == True)  # noqa: E712
-    .order_by(Member.first_name)
-    .all()
-)
-
-unpaid_members = []
-
-for member in active_members:
-    paid_amount = (
-        db.query(func.coalesce(func.sum(Payment.amount), 0))
-        .filter(
-            Payment.member_id == member.id,
-            Payment.month == current_month,
-        )
-        .scalar()
-        or 0
+    active_members = (
+        db.query(Member)
+        .filter(Member.is_active == True)  # noqa: E712
+        .order_by(Member.first_name)
+        .all()
     )
 
-    balance = int(member.fee) - int(paid_amount)
+    unpaid_members = []
 
-    if balance > 0:
-        unpaid_members.append(
-            UnpaidMember(
-                id=member.id,
-                first_name=member.first_name,
-                last_name=member.last_name,
-                phone_number=member.phone_number,
-                fee=balance,
+    for member in active_members:
+        paid_amount = (
+            db.query(func.coalesce(func.sum(Payment.amount), 0))
+            .filter(
+                Payment.member_id == member.id,
+                Payment.month == current_month,
             )
+            .scalar()
+            or 0
         )
+
+        balance = int(member.fee) - int(paid_amount)
+
+        if balance > 0:
+            unpaid_members.append(
+                UnpaidMember(
+                    id=member.id,
+                    first_name=member.first_name,
+                    last_name=member.last_name,
+                    phone_number=member.phone_number,
+                    fee=balance,
+                )
+            )
 
     # ---------------------------------------------------------
     # RECENT 10 PAYMENTS
@@ -272,7 +268,6 @@ for member in active_members:
     recent_audit_logs: Optional[List[RecentAuditLog]] = None
 
     if current_user.role == "admin":
-
         audit_rows = (
             db.query(AuditLog)
             .order_by(AuditLog.created_at.desc())
