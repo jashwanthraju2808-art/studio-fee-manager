@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import API from "../api/axios";
-import { useAuth } from "../context/AuthContext";
+import axios from "axios";
+
+const API_BASE = "https://antar-yoga-api.onrender.com";
 
 export default function Login() {
   const [username, setUsername] = useState("");
@@ -10,7 +11,6 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
 
   const navigate = useNavigate();
-  const { refreshUser } = useAuth();
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -19,49 +19,85 @@ export default function Login() {
     setLoading(true);
 
     try {
-      // FastAPI OAuth2 expects form-urlencoded data
+      // FastAPI OAuth2 login requires form-urlencoded data
       const params = new URLSearchParams();
       params.append("username", username.trim());
       params.append("password", password);
 
-      const response = await API.post("/auth/login", params, {
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-      });
+      const response = await axios.post(
+        `${API_BASE}/auth/login`,
+        params,
+        {
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          timeout: 30000,
+        }
+      );
 
-      const { access_token, username: loggedInUsername } = response.data;
+      console.log("LOGIN RESPONSE:", response.data);
 
-      if (!access_token) {
-        throw new Error("No access token received from server.");
+      const token = response.data.access_token;
+      const loggedInUsername = response.data.username || username.trim();
+
+      if (!token) {
+        throw new Error("No access token returned by server.");
       }
 
-      // Save JWT
-      localStorage.setItem("token", access_token);
-      localStorage.setItem("username", loggedInUsername || username.trim());
+      // Save token
+      localStorage.setItem("token", token);
+      localStorage.setItem("username", loggedInUsername);
 
-      // Verify token and load complete user
-      await refreshUser();
+      // Verify token directly
+      const meResponse = await axios.get(
+        `${API_BASE}/auth/me`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          timeout: 30000,
+        }
+      );
+
+      console.log("AUTH ME RESPONSE:", meResponse.data);
+
+      // Save user information
+      localStorage.setItem(
+        "user",
+        JSON.stringify(meResponse.data)
+      );
 
       // Login successful
       navigate("/", { replace: true });
-    } catch (err) {
-      console.error("Login error:", err);
 
-      // Remove invalid token if one was saved
+    } catch (err) {
+      console.error("LOGIN ERROR:", err);
+
+      // Remove invalid token
       localStorage.removeItem("token");
       localStorage.removeItem("username");
+      localStorage.removeItem("user");
 
-      const detail = err.response?.data?.detail;
+      if (err.response) {
+        console.error("STATUS:", err.response.status);
+        console.error("SERVER RESPONSE:", err.response.data);
 
-      if (err.response?.status === 401) {
-        setError("Invalid username or password.");
-      } else if (detail) {
-        setError(detail);
-      } else if (err.message) {
-        setError(err.message);
+        if (err.response.status === 401) {
+          setError("Invalid username or password.");
+        } else if (err.response.status === 422) {
+          setError("Please enter a valid username and password.");
+        } else {
+          setError(
+            err.response.data?.detail ||
+              `Login failed (${err.response.status}).`
+          );
+        }
+      } else if (err.code === "ECONNABORTED") {
+        setError("Server is taking too long to respond. Please try again.");
       } else {
-        setError("Login failed. Please try again.");
+        setError(
+          err.message || "Unable to connect to the server."
+        );
       }
     } finally {
       setLoading(false);
@@ -77,14 +113,15 @@ export default function Login() {
         justifyContent: "center",
         background:
           "linear-gradient(135deg, #1e1b2e 0%, #2d2645 100%)",
+        padding: "20px",
       }}
     >
       <div
         style={{
           background: "#fff",
-          borderRadius: 16,
+          borderRadius: "16px",
           padding: "40px 36px",
-          width: 380,
+          width: "380px",
           maxWidth: "95vw",
           boxShadow: "0 24px 64px rgba(0,0,0,0.3)",
         }}
@@ -92,13 +129,13 @@ export default function Login() {
         <div
           style={{
             textAlign: "center",
-            marginBottom: 28,
+            marginBottom: "28px",
           }}
         >
           <div
             style={{
-              fontSize: 40,
-              marginBottom: 8,
+              fontSize: "40px",
+              marginBottom: "8px",
             }}
           >
             🧘
@@ -128,63 +165,97 @@ export default function Login() {
 
         {error && (
           <div
-            className="alert alert-error"
             style={{
-              marginBottom: 16,
-              padding: "10px 12px",
-              borderRadius: 8,
+              marginBottom: "16px",
+              padding: "12px",
+              borderRadius: "8px",
+              background: "#fef2f2",
+              color: "#991b1b",
+              border: "1px solid #fecaca",
+              fontSize: "14px",
             }}
           >
-            {error}
+            ❌ {error}
           </div>
         )}
 
         <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label>Username</label>
+          <div style={{ marginBottom: "16px" }}>
+            <label
+              style={{
+                display: "block",
+                marginBottom: "6px",
+                fontWeight: 600,
+                color: "#333",
+              }}
+            >
+              Username
+            </label>
 
             <input
               type="text"
               value={username}
-              onChange={(e) => {
-                setUsername(e.target.value);
-                setError("");
-              }}
+              onChange={(e) => setUsername(e.target.value)}
               placeholder="admin"
               autoComplete="username"
               required
-              autoFocus
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                padding: "11px",
+                border: "1px solid #ccc",
+                borderRadius: "8px",
+                fontSize: "15px",
+              }}
             />
           </div>
 
-          <div className="form-group">
-            <label>Password</label>
+          <div style={{ marginBottom: "16px" }}>
+            <label
+              style={{
+                display: "block",
+                marginBottom: "6px",
+                fontWeight: 600,
+                color: "#333",
+              }}
+            >
+              Password
+            </label>
 
             <input
               type="password"
               value={password}
-              onChange={(e) => {
-                setPassword(e.target.value);
-                setError("");
-              }}
-              placeholder="••••••••"
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password"
               autoComplete="current-password"
               required
+              style={{
+                width: "100%",
+                boxSizing: "border-box",
+                padding: "11px",
+                border: "1px solid #ccc",
+                borderRadius: "8px",
+                fontSize: "15px",
+              }}
             />
           </div>
 
           <button
             type="submit"
-            className="btn btn-primary"
             disabled={loading}
             style={{
               width: "100%",
-              padding: "10px",
-              fontSize: "0.95rem",
-              marginTop: 8,
+              padding: "12px",
+              border: "none",
+              borderRadius: "8px",
+              background: loading ? "#999" : "#4f46e5",
+              color: "#fff",
+              fontSize: "15px",
+              fontWeight: 600,
+              cursor: loading ? "not-allowed" : "pointer",
             }}
           >
-            {loading ? "Signing in…" : "Sign In"}
+            {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>
       </div>
