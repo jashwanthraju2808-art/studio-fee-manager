@@ -126,39 +126,42 @@ def get_dashboard(
     # The member must appear in unpaid_members.
     # ---------------------------------------------------------
 
-    active_members = (
-        db.query(Member)
-        .filter(Member.is_active == True)  # noqa: E712
-        .order_by(Member.first_name)
-        .all()
+    # ---------------------------------------------------------
+# UNPAID / PARTIALLY PAID MEMBERS
+# ---------------------------------------------------------
+
+active_members = (
+    db.query(Member)
+    .filter(Member.is_active == True)  # noqa: E712
+    .order_by(Member.first_name)
+    .all()
+)
+
+unpaid_members = []
+
+for member in active_members:
+    paid_amount = (
+        db.query(func.coalesce(func.sum(Payment.amount), 0))
+        .filter(
+            Payment.member_id == member.id,
+            Payment.month == current_month,
+        )
+        .scalar()
+        or 0
     )
 
-    unpaid_members = []
+    balance = int(member.fee) - int(paid_amount)
 
-    for member in active_members:
-
-        paid_amount = (
-            db.query(func.coalesce(func.sum(Payment.amount), 0))
-            .filter(
-                Payment.member_id == member.id,
-                Payment.month == current_month,
+    if balance > 0:
+        unpaid_members.append(
+            UnpaidMember(
+                id=member.id,
+                first_name=member.first_name,
+                last_name=member.last_name,
+                phone_number=member.phone_number,
+                fee=balance,
             )
-            .scalar()
-            or 0
         )
-
-        balance = int(member.fee) - int(paid_amount)
-
-        if balance > 0:
-            unpaid_members.append(
-                UnpaidMember(
-                    id=member.id,
-                    first_name=member.first_name,
-                    last_name=member.last_name,
-                    phone_number=member.phone_number,
-                    fee=balance,
-                )
-            )
 
     # ---------------------------------------------------------
     # RECENT 10 PAYMENTS
