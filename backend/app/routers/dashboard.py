@@ -66,7 +66,7 @@ class DashboardResponse(BaseModel):
     monthly_summary: List[MonthSummary]
     notification_stats: NotificationStats
 
-    # Only populated for admin users.
+    # Only populated for admin users
     recent_audit_logs: Optional[List[RecentAuditLog]] = None
 
 
@@ -81,6 +81,7 @@ def get_dashboard(
     # ---------------------------------------------------------
     # ACTIVE MEMBERS
     # ---------------------------------------------------------
+
     total_active = (
         db.query(func.count(Member.id))
         .filter(Member.is_active == True)  # noqa: E712
@@ -91,6 +92,7 @@ def get_dashboard(
     # ---------------------------------------------------------
     # TOTAL COLLECTED THIS MONTH
     # ---------------------------------------------------------
+
     total_collected = (
         db.query(func.coalesce(func.sum(Payment.amount), 0))
         .filter(Payment.month == current_month)
@@ -101,6 +103,7 @@ def get_dashboard(
     # ---------------------------------------------------------
     # TOTAL EXPECTED THIS MONTH
     # ---------------------------------------------------------
+
     total_expected = (
         db.query(func.coalesce(func.sum(Member.fee), 0))
         .filter(Member.is_active == True)  # noqa: E712
@@ -111,60 +114,55 @@ def get_dashboard(
     # ---------------------------------------------------------
     # TOTAL PENDING THIS MONTH
     # ---------------------------------------------------------
+
     pending = max(total_expected - total_collected, 0)
 
     # ---------------------------------------------------------
     # UNPAID / PARTIALLY PAID MEMBERS
     #
-    # IMPORTANT:
-    # A member is NOT considered fully paid merely because
-    # they have a payment record.
+    # A member is unpaid if their payment total for the
+    # current month is less than their monthly fee.
     #
     # Example:
     # Monthly fee = ₹1,500
     # Paid         = ₹1,000
     # Balance      = ₹500
     #
-    # That member must appear in "Unpaid This Month".
+    # The member will appear with fee = ₹500.
     # ---------------------------------------------------------
 
-    payment_totals = (
-        db.query(
-            Payment.member_id.label("member_id"),
-            func.coalesce(func.sum(Payment.amount), 0).label("paid_amount"),
-        )
-        .filter(Payment.month == current_month)
-        .group_by(Payment.member_id)
-        .subquery()
-    )
-
-    unpaid_rows = (
-        db.query(
-            Member,
-            func.coalesce(payment_totals.c.paid_amount, 0).label("paid_amount"),
-        )
-        .outerjoin(
-            payment_totals,
-            Member.id == payment_totals.c.member_id,
-        )
-        .filter(
-            Member.is_active == True,  # noqa: E712
-            func.coalesce(payment_totals.c.paid_amount, 0) < Member.fee,
-        )
+    active_members = (
+        db.query(Member)
+        .filter(Member.is_active == True)  # noqa: E712
         .order_by(Member.first_name)
         .all()
     )
 
-    unpaid_members = [
-        UnpaidMember(
-            id=member.id,
-            first_name=member.first_name,
-            last_name=member.last_name,
-            phone_number=member.phone_number,
-            fee=max(member.fee - int(paid_amount), 0),
+    unpaid_members = []
+
+    for member in active_members:
+        paid_amount = (
+            db.query(func.coalesce(func.sum(Payment.amount), 0))
+            .filter(
+                Payment.member_id == member.id,
+                Payment.month == current_month,
+            )
+            .scalar()
+            or 0
         )
-        for member, paid_amount in unpaid_rows
-    ]
+
+        balance = max(int(member.fee) - int(paid_amount), 0)
+
+        if balance > 0:
+            unpaid_members.append(
+                UnpaidMember(
+                    id=member.id,
+                    first_name=member.first_name,
+                    last_name=member.last_name,
+                    phone_number=member.phone_number,
+                    fee=balance,
+                )
+            )
 
     # ---------------------------------------------------------
     # RECENT 10 PAYMENTS
