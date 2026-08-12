@@ -7,7 +7,9 @@ from app.models.batch import Batch              # noqa: F401
 from app.models.member import Member            # noqa: F401
 from app.models.payment import Payment          # noqa: F401
 from app.models.attendance import Attendance    # noqa: F401
-from app.models.user import User                # noqa: F401
+from app.models.user import User                        # noqa: F401
+from app.models.audit_log import AuditLog              # noqa: F401
+from app.models.fee_notification import FeeNotification # noqa: F401
 
 BATCHES = [
     {"name": "5:30 AM – 6:30 AM", "start_time": "05:30", "end_time": "06:30"},

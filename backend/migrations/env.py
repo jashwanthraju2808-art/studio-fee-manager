@@ -1,4 +1,7 @@
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 import sys
 from logging.config import fileConfig
 from pathlib import Path
@@ -17,18 +20,27 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 config = context.config
 
 # Override sqlalchemy.url from environment (set in .env)
-config.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
+BASE_DIR = Path(__file__).resolve().parents[1]
+load_dotenv(BASE_DIR / ".env")
+database_url = os.getenv("DATABASE_URL")
+
+if not database_url:
+    raise RuntimeError("DATABASE_URL is not set")
+
+config.set_main_option("sqlalchemy.url", database_url)
 
 # Set up logging from alembic.ini
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # ── Import all models so autogenerate can detect them ───────
-from app.database.base import Base              # noqa: E402
+from app.database.base import Base
 from app.models.batch import Batch              # noqa: E402, F401
 from app.models.member import Member            # noqa: E402, F401
 from app.models.payment import Payment          # noqa: E402, F401
 from app.models.attendance import Attendance    # noqa: E402, F401
+from app.models.user import User                # noqa: E402, F401
+from app.models.audit_log import AuditLog      # noqa: E402, F401
 
 target_metadata = Base.metadata
 

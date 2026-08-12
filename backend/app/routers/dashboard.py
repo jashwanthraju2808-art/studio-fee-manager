@@ -1,19 +1,21 @@
-from datetime import date, timedelta
-from typing import List
+from datetime import date
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.auth import get_current_user
 from app.database.dependencies import get_db
+from app.models.audit_log import AuditLog
+from app.models.fee_notification import FeeNotification
 from app.models.member import Member
 from app.models.payment import Payment
+from app.models.user import User
 
-router = APIRouter(
-    prefix="/dashboard",
-    tags=["Dashboard"]
-)
+
+router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
 
 class UnpaidMember(BaseModel):
@@ -38,6 +40,21 @@ class MonthSummary(BaseModel):
     collected: int
 
 
+class NotificationStats(BaseModel):
+    sent: int
+    failed: int
+    skipped: int
+
+
+class RecentAuditLog(BaseModel):
+    id: int
+    username: Optional[str]
+    action: str
+    module: str
+    description: str
+    created_at: str
+
+
 class DashboardResponse(BaseModel):
     total_active_members: int
     current_month: str
@@ -47,86 +64,244 @@ class DashboardResponse(BaseModel):
     unpaid_members: List[UnpaidMember]
     recent_payments: List[RecentPayment]
     monthly_summary: List[MonthSummary]
+    notification_stats: NotificationStats
+
+    # Only populated for admin users.
+    recent_audit_logs: Optional[List[RecentAuditLog]] = None
 
 
 @router.get("/", response_model=DashboardResponse)
-def get_dashboard(db: Session = Depends(get_db)):
+def get_dashboard(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     today = date.today()
     current_month = today.strftime("%Y-%m")
 
-    total_active = db.query(func.count(Member.id)).filter(
-        Member.is_active == True  # noqa: E712
-    ).scalar() or 0
-
-    total_collected = db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(
-        Payment.month == current_month
-    ).scalar() or 0
-
-    total_expected = db.query(func.coalesce(func.sum(Member.fee), 0)).filter(
-        Member.is_active == True  # noqa: E712
-    ).scalar() or 0
-
-    pending = total_expected - total_collected
-
-    # Members who have NOT paid this month
-    paid_member_ids = (
-        db.query(Payment.member_id).filter(Payment.month == current_month).subquery()
+    # ---------------------------------------------------------
+    # ACTIVE MEMBERS
+    # ---------------------------------------------------------
+    total_active = (
+        db.query(func.count(Member.id))
+        .filter(Member.is_active == True)  # noqa: E712
+        .scalar()
+        or 0
     )
+
+    # ---------------------------------------------------------
+    # TOTAL COLLECTED THIS MONTH
+    # ---------------------------------------------------------
+    total_collected = (
+        db.query(func.coalesce(func.sum(Payment.amount), 0))
+        .filter(Payment.month == current_month)
+        .scalar()
+        or 0
+    )
+
+    # ---------------------------------------------------------
+    # TOTAL EXPECTED THIS MONTH
+    # ---------------------------------------------------------
+    total_expected = (
+        db.query(func.coalesce(func.sum(Member.fee), 0))
+        .filter(Member.is_active == True)  # noqa: E712
+        .scalar()
+        or 0
+    )
+
+    # ---------------------------------------------------------
+    # TOTAL PENDING THIS MONTH
+    # ---------------------------------------------------------
+    pending = max(total_expected - total_collected, 0)
+
+    # ---------------------------------------------------------
+    # UNPAID / PARTIALLY PAID MEMBERS
+    #
+    # IMPORTANT:
+    # A member is NOT considered fully paid merely because
+    # they have a payment record.
+    #
+    # Example:
+    # Monthly fee = ₹1,500
+    # Paid         = ₹1,000
+    # Balance      = ₹500
+    #
+    # That member must appear in "Unpaid This Month".
+    # ---------------------------------------------------------
+
+    payment_totals = (
+        db.query(
+            Payment.member_id.label("member_id"),
+            func.coalesce(func.sum(Payment.amount), 0).label("paid_amount"),
+        )
+        .filter(Payment.month == current_month)
+        .group_by(Payment.member_id)
+        .subquery()
+    )
+
     unpaid_rows = (
-        db.query(Member)
+        db.query(
+            Member,
+            func.coalesce(payment_totals.c.paid_amount, 0).label("paid_amount"),
+        )
+        .outerjoin(
+            payment_totals,
+            Member.id == payment_totals.c.member_id,
+        )
         .filter(
             Member.is_active == True,  # noqa: E712
-            ~Member.id.in_(paid_member_ids),
+            func.coalesce(payment_totals.c.paid_amount, 0) < Member.fee,
         )
         .order_by(Member.first_name)
         .all()
     )
+
     unpaid_members = [
         UnpaidMember(
-            id=m.id,
-            first_name=m.first_name,
-            last_name=m.last_name,
-            phone_number=m.phone_number,
-            fee=m.fee,
+            id=member.id,
+            first_name=member.first_name,
+            last_name=member.last_name,
+            phone_number=member.phone_number,
+            fee=max(member.fee - int(paid_amount), 0),
         )
-        for m in unpaid_rows
+        for member, paid_amount in unpaid_rows
     ]
 
-    # Recent 10 payments
+    # ---------------------------------------------------------
+    # RECENT 10 PAYMENTS
+    # ---------------------------------------------------------
+
     recent_rows = (
         db.query(Payment)
         .join(Member, Payment.member_id == Member.id)
-        .order_by(Payment.payment_date.desc(), Payment.id.desc())
+        .order_by(
+            Payment.payment_date.desc(),
+            Payment.id.desc(),
+        )
         .limit(10)
         .all()
     )
+
     recent_payments = [
         RecentPayment(
-            id=p.id,
-            member_id=p.member_id,
-            member_name=f"{p.member.first_name} {p.member.last_name}",
-            amount=p.amount,
-            month=p.month,
-            payment_date=p.payment_date,
+            id=payment.id,
+            member_id=payment.member_id,
+            member_name=(
+                f"{payment.member.first_name} "
+                f"{payment.member.last_name}"
+            ),
+            amount=payment.amount,
+            month=payment.month,
+            payment_date=payment.payment_date,
         )
-        for p in recent_rows
+        for payment in recent_rows
     ]
 
-    # 6-month rolling summary
+    # ---------------------------------------------------------
+    # 6-MONTH ROLLING COLLECTION SUMMARY
+    # ---------------------------------------------------------
+
     monthly_summary = []
+
     for i in range(5, -1, -1):
-        # Walk back i months from today
         first_of_month = today.replace(day=1)
+
         target = date(
-            first_of_month.year + (first_of_month.month - i - 1) // 12,
+            first_of_month.year
+            + (first_of_month.month - i - 1) // 12,
             ((first_of_month.month - i - 1) % 12) + 1,
             1,
         )
+
         label = target.strftime("%Y-%m")
-        collected = db.query(func.coalesce(func.sum(Payment.amount), 0)).filter(
-            Payment.month == label
-        ).scalar() or 0
-        monthly_summary.append(MonthSummary(month=label, collected=collected))
+
+        collected = (
+            db.query(func.coalesce(func.sum(Payment.amount), 0))
+            .filter(Payment.month == label)
+            .scalar()
+            or 0
+        )
+
+        monthly_summary.append(
+            MonthSummary(
+                month=label,
+                collected=collected,
+            )
+        )
+
+    # ---------------------------------------------------------
+    # NOTIFICATION STATISTICS
+    # ---------------------------------------------------------
+
+    notif_sent = (
+        db.query(func.count(FeeNotification.id))
+        .filter(
+            FeeNotification.due_month == current_month,
+            FeeNotification.status == "sent",
+        )
+        .scalar()
+        or 0
+    )
+
+    notif_failed = (
+        db.query(func.count(FeeNotification.id))
+        .filter(
+            FeeNotification.due_month == current_month,
+            FeeNotification.status == "failed",
+        )
+        .scalar()
+        or 0
+    )
+
+    notif_skipped = (
+        db.query(func.count(FeeNotification.id))
+        .filter(
+            FeeNotification.due_month == current_month,
+            FeeNotification.status == "skipped",
+        )
+        .scalar()
+        or 0
+    )
+
+    notification_stats = NotificationStats(
+        sent=notif_sent,
+        failed=notif_failed,
+        skipped=notif_skipped,
+    )
+
+    # ---------------------------------------------------------
+    # RECENT AUDIT LOGS
+    # ADMIN ONLY
+    # ---------------------------------------------------------
+
+    recent_audit_logs: Optional[List[RecentAuditLog]] = None
+
+    if current_user.role == "admin":
+        audit_rows = (
+            db.query(AuditLog)
+            .order_by(AuditLog.created_at.desc())
+            .limit(5)
+            .all()
+        )
+
+        recent_audit_logs = [
+            RecentAuditLog(
+                id=audit.id,
+                username=audit.username,
+                action=audit.action,
+                module=audit.module,
+                description=audit.description,
+                created_at=(
+                    audit.created_at.isoformat()
+                    if audit.created_at
+                    else ""
+                ),
+            )
+            for audit in audit_rows
+        ]
+
+    # ---------------------------------------------------------
+    # FINAL DASHBOARD RESPONSE
+    # ---------------------------------------------------------
 
     return DashboardResponse(
         total_active_members=total_active,
@@ -137,4 +312,6 @@ def get_dashboard(db: Session = Depends(get_db)):
         unpaid_members=unpaid_members,
         recent_payments=recent_payments,
         monthly_summary=monthly_summary,
+        notification_stats=notification_stats,
+        recent_audit_logs=recent_audit_logs,
     )

@@ -14,6 +14,10 @@ from app.routers.batches import router as batch_router
 from app.routers.notifications import router as notification_router
 from app.routers.studio import router as studio_router
 from app.routers.users import router as users_router
+from app.routers.audit_logs import router as audit_logs_router
+from app.routers.export import router as export_router
+from app.routers.import_data import router as import_router
+from app.routers.cron import router as cron_router
 
 app = FastAPI(
     title="Studio Fee Manager API",
@@ -21,7 +25,7 @@ app = FastAPI(
     description="Antar Yoga — Studio Fee Manager",
 )
 
-# CORS configuration
+# ── CORS ───────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -35,25 +39,29 @@ app.add_middleware(
 )
 
 # ── Public routes (no auth needed) ────────────────────────────
-
 app.include_router(auth_router)
 
-# ── Protected routes (JWT required) ───────────────────────────
+# Cron job uses its own CRON_SECRET header auth — not JWT
+app.include_router(cron_router)
 
+# ── Protected routes (JWT required globally) ──────────────────
 protected = {"dependencies": [Depends(get_current_user)]}
 
-app.include_router(member_router, **protected)
-app.include_router(payment_router, **protected)
-app.include_router(attendance_router, **protected)
-app.include_router(dashboard_router, **protected)
-app.include_router(batch_router, **protected)
+app.include_router(member_router,       **protected)
+app.include_router(payment_router,      **protected)
+app.include_router(attendance_router,   **protected)
+app.include_router(dashboard_router,    **protected)
+app.include_router(batch_router,        **protected)
 app.include_router(notification_router, **protected)
+app.include_router(export_router,       **protected)
 
-# Studio router handles authentication per endpoint
+# These routers handle auth per-endpoint (require_admin inside each route)
 app.include_router(studio_router)
 app.include_router(users_router)
+app.include_router(audit_logs_router)
+app.include_router(import_router)
 
-# Serve uploaded files (logos etc.)
+# ── Static uploads (logos etc.) ───────────────────────────────
 uploads_dir = Path(__file__).parent / "uploads"
 uploads_dir.mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")

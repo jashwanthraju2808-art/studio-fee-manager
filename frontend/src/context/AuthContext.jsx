@@ -4,16 +4,42 @@ import API from "../api/axios";
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  // Determine synchronously whether we need to wait for /auth/me.
-  // If there is no token there is nothing to wait for — start loading=false.
   const hasToken = !!localStorage.getItem("token");
 
-  const [user, setUser]       = useState(null);
-  const [loading, setLoading] = useState(hasToken); // false immediately when no token
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(hasToken);
+
+  async function refreshUser() {
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      setUser(null);
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const res = await API.get("/auth/me");
+
+      setUser({
+        id: res.data.id,
+        username: res.data.username,
+        role: res.data.role,
+      });
+    } catch (err) {
+      localStorage.removeItem("token");
+      localStorage.removeItem("username");
+      setUser(null);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (!hasToken) {
-      // No token — nothing to do, already loading=false
       return;
     }
 
@@ -23,30 +49,34 @@ export function AuthProvider({ children }) {
       .then((res) => {
         if (!cancelled) {
           setUser({
-            id:       res.data.id,
+            id: res.data.id,
             username: res.data.username,
-            role:     res.data.role,
+            role: res.data.role,
           });
         }
       })
       .catch(() => {
         if (!cancelled) {
-          // Token invalid or backend unreachable — clear and redirect to login
           localStorage.removeItem("token");
           localStorage.removeItem("username");
           setUser(null);
         }
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       });
 
-    return () => { cancelled = true; };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const value = {
     user,
     setUser,
+    refreshUser,
     isAdmin: user?.role === "admin",
     loading,
   };
@@ -60,11 +90,16 @@ export function AuthProvider({ children }) {
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
-  // If ctx is null it means useAuth was called outside AuthProvider.
-  // Return a safe no-op default rather than throwing, so the app doesn't
-  // crash with a blank screen.
+
   if (!ctx) {
-    return { user: null, setUser: () => {}, isAdmin: false, loading: false };
+    return {
+      user: null,
+      setUser: () => {},
+      refreshUser: async () => {},
+      isAdmin: false,
+      loading: false,
+    };
   }
+
   return ctx;
 }
