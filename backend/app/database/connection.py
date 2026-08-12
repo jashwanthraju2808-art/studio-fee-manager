@@ -11,7 +11,10 @@ DATABASE_URL = os.getenv(
     "postgresql+psycopg://postgres:2808@localhost:5432/studio_fee_manager"
 )
 
-engine = create_engine(DATABASE_URL)
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+)
 
 SessionLocal = sessionmaker(
     autocommit=False,
