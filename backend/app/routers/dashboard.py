@@ -65,8 +65,6 @@ class DashboardResponse(BaseModel):
     recent_payments: List[RecentPayment]
     monthly_summary: List[MonthSummary]
     notification_stats: NotificationStats
-
-    # Only populated for admin users
     recent_audit_logs: Optional[List[RecentAuditLog]] = None
 
 
@@ -120,49 +118,47 @@ def get_dashboard(
     # ---------------------------------------------------------
     # UNPAID / PARTIALLY PAID MEMBERS
     #
-    # A member is unpaid if their payment total for the
-    # current month is less than their monthly fee.
-    #
     # Example:
-    # Monthly fee = ₹1,500
-    # Paid         = ₹1,000
-    # Balance      = ₹500
+    # Fee  = 1500
+    # Paid = 1000
+    # Due  = 500
     #
-    # The member will appear with fee = ₹500.
+    # The member must appear in unpaid_members.
     # ---------------------------------------------------------
 
-   active_members = (
-    db.query(Member)
-    .filter(Member.is_active == True)  # noqa: E712
-    .order_by(Member.first_name)
-    .all()
-)
-
-unpaid_members = []
-
-for member in active_members:
-    paid_amount = (
-        db.query(func.coalesce(func.sum(Payment.amount), 0))
-        .filter(
-            Payment.member_id == member.id,
-            Payment.month == current_month,
-        )
-        .scalar()
-        or 0
+    active_members = (
+        db.query(Member)
+        .filter(Member.is_active == True)  # noqa: E712
+        .order_by(Member.first_name)
+        .all()
     )
 
-    balance = member.fee - int(paid_amount)
+    unpaid_members = []
 
-    if balance > 0:
-        unpaid_members.append(
-            UnpaidMember(
-                id=member.id,
-                first_name=member.first_name,
-                last_name=member.last_name,
-                phone_number=member.phone_number,
-                fee=balance,
+    for member in active_members:
+
+        paid_amount = (
+            db.query(func.coalesce(func.sum(Payment.amount), 0))
+            .filter(
+                Payment.member_id == member.id,
+                Payment.month == current_month,
             )
+            .scalar()
+            or 0
         )
+
+        balance = int(member.fee) - int(paid_amount)
+
+        if balance > 0:
+            unpaid_members.append(
+                UnpaidMember(
+                    id=member.id,
+                    first_name=member.first_name,
+                    last_name=member.last_name,
+                    phone_number=member.phone_number,
+                    fee=balance,
+                )
+            )
 
     # ---------------------------------------------------------
     # RECENT 10 PAYMENTS
@@ -267,13 +263,13 @@ for member in active_members:
     )
 
     # ---------------------------------------------------------
-    # RECENT AUDIT LOGS
-    # ADMIN ONLY
+    # RECENT AUDIT LOGS - ADMIN ONLY
     # ---------------------------------------------------------
 
     recent_audit_logs: Optional[List[RecentAuditLog]] = None
 
     if current_user.role == "admin":
+
         audit_rows = (
             db.query(AuditLog)
             .order_by(AuditLog.created_at.desc())
@@ -298,7 +294,7 @@ for member in active_members:
         ]
 
     # ---------------------------------------------------------
-    # FINAL DASHBOARD RESPONSE
+    # FINAL RESPONSE
     # ---------------------------------------------------------
 
     return DashboardResponse(
