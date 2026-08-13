@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { getDashboard } from "../api/dashboardApi";
 import { sendBulkReminders, sendSingleReminder } from "../api/notificationApi";
 import { useAuth } from "../context/AuthContext";
@@ -12,6 +13,8 @@ export default function Dashboard() {
   const [loading, setLoading]  = useState(true);
   const [sending, setSending]  = useState(false);
   const [sendingId, setSendingId] = useState(null);
+
+  const navigate   = useNavigate();
 
   useEffect(() => { load(); }, []);
 
@@ -111,7 +114,12 @@ export default function Dashboard() {
 
       {/* ── Stat cards ─────────────────────────────────────── */}
       <div className="stat-grid">
-        <div className="stat-card accent">
+        <div
+          className="stat-card accent"
+          onClick={() => navigate("/members")}
+          style={{ cursor: "pointer" }}
+          title="View all members"
+        >
           <div className="stat-value">{data.total_active_members}</div>
           <div className="stat-label">Active Members</div>
         </div>

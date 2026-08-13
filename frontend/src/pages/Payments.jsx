@@ -219,6 +219,16 @@ Antar Yoga`;
     return members.find((m) => m.id === payment.member_id);
   };
 
+  // ── Sort payments A→Z by member name ─────────────────────
+  // Secondary sort: payment_date descending within same member name
+  const sortedPayments = [...payments].sort((a, b) => {
+    const nameA = memberName(a.member_id).toLowerCase();
+    const nameB = memberName(b.member_id).toLowerCase();
+    if (nameA !== nameB) return nameA.localeCompare(nameB, "en", { sensitivity: "base" });
+    // Same name: sort by payment_date descending
+    return b.payment_date.localeCompare(a.payment_date);
+  });
+
   const totalCollected = payments.reduce(
     (s, p) => s + p.amount,
     0
@@ -327,13 +337,14 @@ Antar Yoga`;
                     </td>
                   </tr>
                 ) : (
-                  payments.map((p) => {
+                  sortedPayments.map((p, idx) => {
                     const member = getMemberForPayment(p);
 
                     return (
                       <tr key={p.id}>
+                        {/* Display position — NOT payment database id */}
                         <td style={{ color: "#aaa" }}>
-                          {p.id}
+                          {idx + 1}
                         </td>
 
                         <td>
