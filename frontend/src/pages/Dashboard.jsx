@@ -1,266 +1,171 @@
 import { useEffect, useState } from "react";
 import { getDashboard } from "../api/dashboardApi";
+import { sendBulkReminders, sendSingleReminder } from "../api/notificationApi";
 import { useAuth } from "../context/AuthContext";
 
 export default function Dashboard() {
   const { isAdmin } = useAuth();
 
-  const [data, setData] = useState(null);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(true);
+  const [data, setData]        = useState(null);
+  const [error, setError]      = useState("");
+  const [success, setSuccess]  = useState("");
+  const [loading, setLoading]  = useState(true);
+  const [sending, setSending]  = useState(false);
+  const [sendingId, setSendingId] = useState(null);
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
   async function load() {
     setLoading(true);
     setError("");
-
     try {
       const res = await getDashboard();
       setData(res.data);
-    } catch (err) {
+    } catch {
       setError("Could not connect to the API. Is the backend running?");
     } finally {
       setLoading(false);
     }
   }
 
-  // Convert Indian phone number to WhatsApp format.
-  // Example:
-  // 9876543210     -> 919876543210
-  // +919876543210 -> 919876543210
   function getWhatsAppNumber(phone) {
     if (!phone) return "";
-
-    let number = String(phone)
-      .trim()
-      .replace(/\s+/g, "")
-      .replace(/-/g, "")
-      .replace(/[()]/g, "");
-
-    if (number.startsWith("+")) {
-      number = number.substring(1);
-    }
-
-    if (number.startsWith("91") && number.length === 12) {
-      return number;
-    }
-
-    if (number.length === 10) {
-      return `91${number}`;
-    }
-
-    return number;
+    let n = String(phone).trim().replace(/[\s\-()]/g, "");
+    if (n.startsWith("+")) n = n.substring(1);
+    if (n.length === 10)   n = "91" + n;
+    return n;
   }
 
-  function createReminderMessage(member) {
-    const monthLabel = data.current_month;
-
-    return `Hello ${member.first_name} 🙏
-
-This is a friendly reminder from *Antar Yoga* that your monthly fee of *₹${member.fee}* for *${monthLabel}* is pending.
-
-Please make the payment at your earliest convenience.
-
-Thank you 😊
-— Antar Yoga`;
+  function buildReminderMessage(member) {
+    return `Hello ${member.first_name} 🙏\n\nThis is a friendly reminder from *ANTAR YOGA* that your monthly fee of *₹${member.fee}* for *${data.current_month}* is due.\n\nPlease make the payment at your earliest convenience.\n\nThank you 🙏\n— Antar Yoga`;
   }
 
   function openWhatsApp(member) {
     const number = getWhatsAppNumber(member.phone_number);
+    if (!number) { alert(`No valid phone for ${member.first_name}.`); return; }
+    window.open(`https://wa.me/${number}?text=${encodeURIComponent(buildReminderMessage(member))}`, "_blank", "noopener,noreferrer");
+  }
 
-    if (!number) {
-      alert(`No valid phone number found for ${member.first_name}.`);
-      return;
+  async function handleSendAllReminders() {
+    if (!window.confirm(`Send WhatsApp reminders to all ${data.unpaid_members.length} unpaid members?`)) return;
+    setSending(true);
+    try {
+      const res  = await sendBulkReminders(data.current_month);
+      const sent    = res.data.results.filter((r) => r.whatsapp.status === "sent").length;
+      const skipped = res.data.results.filter((r) => r.whatsapp.status === "skipped").length;
+      const failed  = res.data.results.filter((r) => r.whatsapp.status === "failed").length;
+      flash(`Reminders: ${sent} sent, ${skipped} skipped, ${failed} failed.`, "success");
+      load();
+    } catch {
+      flash("Failed to send reminders.", "error");
+    } finally {
+      setSending(false);
     }
-
-    const message = createReminderMessage(member);
-    const url = `https://wa.me/${number}?text=${encodeURIComponent(message)}`;
-
-    window.open(url, "_blank", "noopener,noreferrer");
   }
 
-  function openAllWhatsApp() {
-    if (!data?.unpaid_members?.length) return;
-
-    alert(
-      "WhatsApp will open for each unpaid member. " +
-      "You must press Send in WhatsApp for each message."
-    );
-
-    data.unpaid_members.forEach((member, index) => {
-      setTimeout(() => {
-        openWhatsApp(member);
-      }, index * 800);
-    });
+  async function handleSingleReminder(member) {
+    setSendingId(member.id);
+    try {
+      const res = await sendSingleReminder(member.id);
+      const st  = res.data.whatsapp?.status;
+      if (st === "sent") flash(`Reminder sent to ${member.first_name}!`, "success");
+      else openWhatsApp(member);
+    } catch {
+      openWhatsApp(member);
+    } finally {
+      setSendingId(null);
+    }
   }
 
-  if (loading) {
-    return <div className="loading">Loading dashboard…</div>;
+  function flash(msg, type) {
+    if (type === "success") { setSuccess(msg); setTimeout(() => setSuccess(""), 5000); }
+    else                    { setError(msg);   setTimeout(() => setError(""),   5000); }
   }
 
-  if (error && !data) {
-    return <div className="alert alert-error">{error}</div>;
-  }
-
+  if (loading) return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "60vh", flexDirection: "column", gap: 12, color: "var(--text-muted)" }}>
+      <span style={{ fontSize: 32, color: "var(--gold)", opacity: 0.7 }}>✿</span>
+      <span>Loading dashboard…</span>
+    </div>
+  );
+  if (error && !data) return <div className="alert alert-error">{error}</div>;
   if (!data) return null;
 
-  const maxCollected = Math.max(
-    ...data.monthly_summary.map((m) => m.collected),
-    1
-  );
-
-  const ns = data.notification_stats;
+  const maxCollected = Math.max(...data.monthly_summary.map((m) => m.collected), 1);
 
   return (
     <>
+      {/* ── Header ─────────────────────────────────────────── */}
       <div className="page-header">
-        <h1>Dashboard</h1>
-
-        <span style={{ color: "#888", fontSize: "0.85rem" }}>
-          {new Date().toLocaleDateString("en-IN", {
-            month: "long",
-            year: "numeric",
-          })}
-        </span>
+        <div>
+          <h1>Dashboard</h1>
+          <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginTop: 2 }}>
+            {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+          </p>
+        </div>
+        <button className="btn btn-outline btn-sm" onClick={load}>↺ Refresh</button>
       </div>
 
-      {error && <div className="alert alert-error">{error}</div>}
+      {error   && <div className="alert alert-error">{error}</div>}
+      {success && <div className="alert alert-success">{success}</div>}
 
-      {/* Main stat cards */}
+      {/* ── Stat cards ─────────────────────────────────────── */}
       <div className="stat-grid">
         <div className="stat-card accent">
-          <div className="stat-value">
-            {data.total_active_members}
-          </div>
+          <div className="stat-value">{data.total_active_members}</div>
           <div className="stat-label">Active Members</div>
         </div>
-
         <div className="stat-card success">
-          <div className="stat-value">
-            ₹{data.total_collected_this_month.toLocaleString()}
-          </div>
+          <div className="stat-value">₹{data.total_collected_this_month.toLocaleString("en-IN")}</div>
           <div className="stat-label">Collected This Month</div>
         </div>
-
         <div className="stat-card">
-          <div className="stat-value">
-            ₹{data.total_expected_this_month.toLocaleString()}
-          </div>
+          <div className="stat-value">₹{data.total_expected_this_month.toLocaleString("en-IN")}</div>
           <div className="stat-label">Expected This Month</div>
         </div>
-
         <div className="stat-card danger">
-          <div className="stat-value">
-            ₹{data.pending_this_month.toLocaleString()}
-          </div>
+          <div className="stat-value">₹{data.pending_this_month.toLocaleString("en-IN")}</div>
           <div className="stat-label">Pending This Month</div>
         </div>
       </div>
 
-      {/* Notification stats */}
-      {ns && (
-        <div
-          style={{
-            display: "flex",
-            gap: 12,
-            marginBottom: 20,
-            flexWrap: "wrap",
-          }}
-        >
+      {/* ── Notification mini-stats ────────────────────────── */}
+      {data.notification_stats && (
+        <div style={{ display: "flex", gap: 10, marginBottom: 22, flexWrap: "wrap" }}>
           {[
-            {
-              label: "Reminders Sent",
-              value: ns.sent,
-              color: "#16a34a",
-              bg: "#f0fdf4",
-            },
-            {
-              label: "Reminders Failed",
-              value: ns.failed,
-              color: "#dc2626",
-              bg: "#fef2f2",
-            },
-            {
-              label: "Reminders Skipped",
-              value: ns.skipped,
-              color: "#d97706",
-              bg: "#fffbeb",
-            },
+            { label: "Reminders Sent",    value: data.notification_stats.sent,    color: "var(--success)", bg: "var(--success-bg)" },
+            { label: "Reminders Failed",  value: data.notification_stats.failed,  color: "var(--danger)",  bg: "var(--danger-bg)"  },
+            { label: "Reminders Skipped", value: data.notification_stats.skipped, color: "var(--warning)", bg: "var(--warning-bg)" },
           ].map(({ label, value, color, bg }) => (
-            <div
-              key={label}
-              style={{
-                flex: 1,
-                minWidth: 140,
-                padding: "12px 16px",
-                background: bg,
-                borderRadius: 10,
-                border: `1px solid ${color}22`,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: "1.5rem",
-                  fontWeight: 700,
-                  color,
-                }}
-              >
-                {value}
-              </div>
-
-              <div
-                style={{
-                  fontSize: "0.78rem",
-                  color: "#666",
-                  marginTop: 2,
-                }}
-              >
-                {label}
-              </div>
+            <div key={label} style={{
+              flex: "1 1 130px", padding: "12px 16px", background: bg,
+              borderRadius: "var(--radius)", border: `1px solid ${color}22`,
+              display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+            }}>
+              <span style={{ fontFamily: "var(--font-serif)", fontSize: "1.4rem", fontWeight: 700, color }}>{value}</span>
+              <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em" }}>{label}</span>
             </div>
           ))}
         </div>
       )}
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: 20,
-        }}
-      >
-        {/* Monthly collections */}
-        <div className="card">
-          <h2
-            style={{
-              fontSize: "1rem",
-              fontWeight: 600,
-              marginBottom: 16,
-            }}
-          >
-            Monthly Collections (6 months)
-          </h2>
+      {/* ── Two-column grid ────────────────────────────────── */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 22 }}>
 
+        {/* Monthly collections bar chart */}
+        <div className="card">
+          <h2 style={{ marginBottom: 18, fontSize: "0.95rem", letterSpacing: "0.03em", textTransform: "uppercase", color: "var(--text-muted)", fontFamily: "var(--font-sans)", fontWeight: 600 }}>
+            Collections — 6 Months
+          </h2>
           <div className="bar-chart">
             {data.monthly_summary.map((m) => (
               <div className="bar-col" key={m.month}>
                 <div
                   className="bar"
-                  title={`₹${m.collected.toLocaleString()}`}
-                  style={{
-                    height: `${(m.collected / maxCollected) * 90}%`,
-                  }}
+                  title={`₹${m.collected.toLocaleString("en-IN")}`}
+                  style={{ height: `${(m.collected / maxCollected) * 90}%` }}
                 />
-
-                <div className="bar-label">
-                  {m.month.slice(5)}
-                </div>
+                <div className="bar-label">{m.month.slice(5)}</div>
               </div>
             ))}
           </div>
@@ -268,120 +173,62 @@ Thank you 😊
 
         {/* Unpaid members */}
         <div className="card">
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: 12,
-              gap: 10,
-            }}
-          >
-            <h2
-              style={{
-                fontSize: "1rem",
-                fontWeight: 600,
-                margin: 0,
-              }}
-            >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, gap: 8 }}>
+            <h2 style={{ margin: 0, fontSize: "0.95rem", letterSpacing: "0.03em", textTransform: "uppercase", color: "var(--text-muted)", fontFamily: "var(--font-sans)", fontWeight: 600 }}>
               Unpaid This Month
-
-              <span
-                className="badge badge-danger"
-                style={{ marginLeft: 8 }}
-              >
+              <span className="badge badge-danger" style={{ marginLeft: 8, verticalAlign: "middle" }}>
                 {data.unpaid_members.length}
               </span>
             </h2>
-
             {data.unpaid_members.length > 0 && (
               <button
                 className="btn btn-success btn-sm"
-                onClick={openAllWhatsApp}
+                onClick={handleSendAllReminders}
+                disabled={sending}
               >
-                📲 WhatsApp All
+                {sending ? "Sending…" : "📲 Remind All"}
               </button>
             )}
           </div>
 
           {data.unpaid_members.length === 0 ? (
-            <p
-              style={{
-                color: "#16a34a",
-                fontSize: "0.9rem",
-              }}
-            >
-              ✅ Everyone has paid this month!
-            </p>
+            <div style={{ color: "var(--success)", fontSize: "0.875rem", display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 18 }}>✓</span> Everyone has paid this month!
+            </div>
           ) : (
-            <ul
-              style={{
-                listStyle: "none",
-                padding: 0,
-                margin: 0,
-              }}
-            >
+            <ul style={{ listStyle: "none", padding: 0, margin: 0, maxHeight: 260, overflowY: "auto" }}>
               {data.unpaid_members.map((m) => (
-                <li
-                  key={m.id}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    padding: "8px 0",
-                    borderBottom: "1px solid #f0f0f0",
-                    fontSize: "0.88rem",
-                  }}
-                >
+                <li key={m.id} style={{
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                  padding: "8px 0", borderBottom: "1px solid var(--border-light)",
+                }}>
                   <div>
-                    <div style={{ fontWeight: 600 }}>
-                      {m.first_name} {m.last_name}
-                    </div>
-
-                    <div
-                      style={{
-                        fontSize: "0.75rem",
-                        color: "#888",
-                        marginTop: 2,
-                      }}
-                    >
-                      ₹{m.fee} pending
-                    </div>
+                    <div style={{ fontWeight: 600, fontSize: "0.875rem" }}>{m.first_name} {m.last_name}</div>
+                    <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: 1 }}>₹{m.fee} pending</div>
                   </div>
-
                   <button
                     className="btn btn-outline btn-sm"
-                    style={{
-                      fontSize: "0.75rem",
-                      padding: "4px 10px",
-                    }}
-                    onClick={() => openWhatsApp(m)}
+                    onClick={() => handleSingleReminder(m)}
+                    disabled={sendingId === m.id}
+                    style={{ flexShrink: 0 }}
                   >
-                    📲 WhatsApp
+                    {sendingId === m.id ? "…" : "📲"}
                   </button>
                 </li>
               ))}
             </ul>
           )}
         </div>
+
       </div>
 
-      {/* Recent payments */}
+      {/* ── Recent payments ────────────────────────────────── */}
       <div className="card">
-        <h2
-          style={{
-            fontSize: "1rem",
-            fontWeight: 600,
-            marginBottom: 12,
-          }}
-        >
+        <h2 style={{ marginBottom: 14, fontSize: "0.95rem", letterSpacing: "0.03em", textTransform: "uppercase", color: "var(--text-muted)", fontFamily: "var(--font-sans)", fontWeight: 600 }}>
           Recent Payments
         </h2>
-
         {data.recent_payments.length === 0 ? (
-          <div className="empty">
-            No payments recorded yet.
-          </div>
+          <div className="empty">No payments recorded yet.</div>
         ) : (
           <div className="table-wrapper">
             <table>
@@ -393,19 +240,13 @@ Thank you 😊
                   <th>Date</th>
                 </tr>
               </thead>
-
               <tbody>
                 {data.recent_payments.map((p) => (
                   <tr key={p.id}>
-                    <td>{p.member_name}</td>
-
-                    <td>
-                      ₹{p.amount.toLocaleString()}
-                    </td>
-
-                    <td>{p.month}</td>
-
-                    <td>{p.payment_date}</td>
+                    <td style={{ fontWeight: 500 }}>{p.member_name}</td>
+                    <td style={{ color: "var(--success)", fontWeight: 600 }}>₹{p.amount.toLocaleString("en-IN")}</td>
+                    <td style={{ color: "var(--text-muted)" }}>{p.month}</td>
+                    <td style={{ color: "var(--text-muted)" }}>{p.payment_date}</td>
                   </tr>
                 ))}
               </tbody>
@@ -414,112 +255,26 @@ Thank you 😊
         )}
       </div>
 
-      {/* Recent audit activity */}
-      {isAdmin &&
-        data.recent_audit_logs &&
-        data.recent_audit_logs.length > 0 && (
-          <div className="card">
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 12,
-              }}
-            >
-              <h2
-                style={{
-                  fontSize: "1rem",
-                  fontWeight: 600,
-                  margin: 0,
-                }}
-              >
-                🔐 Recent Activity
-              </h2>
-
-              <a
-                href="/audit-logs"
-                style={{
-                  fontSize: 13,
-                  color: "#6d28d9",
-                }}
-              >
-                View all →
-              </a>
-            </div>
-
-            <div className="table-wrapper">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Time</th>
-                    <th>User</th>
-                    <th>Action</th>
-                    <th>Module</th>
-                    <th>Description</th>
-                  </tr>
-                </thead>
-
-                <tbody>
-                  {data.recent_audit_logs.map((log) => (
-                    <tr key={log.id}>
-                      <td
-                        style={{
-                          whiteSpace: "nowrap",
-                          color: "#666",
-                          fontSize: 12,
-                        }}
-                      >
-                        {new Date(
-                          log.created_at
-                        ).toLocaleString("en-IN", {
-                          dateStyle: "short",
-                          timeStyle: "short",
-                        })}
-                      </td>
-
-                      <td style={{ fontWeight: 600 }}>
-                        {log.username || "—"}
-                      </td>
-
-                      <td>
-                        <span
-                          style={{
-                            padding: "2px 8px",
-                            borderRadius: 12,
-                            fontSize: 11,
-                            background: "#ede9fe",
-                            color: "#5b21b6",
-                            fontWeight: 700,
-                          }}
-                        >
-                          {log.action}
-                        </span>
-                      </td>
-
-                      <td style={{ color: "#666" }}>
-                        {log.module}
-                      </td>
-
-                      <td
-                        style={{
-                          fontSize: 12,
-                          color: "#444",
-                          maxWidth: 300,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {log.description}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      {/* ── Admin quick-link to Audit Logs ─────────────────── */}
+      {/* NOTE: Audit detail removed from dashboard — lives at /audit-logs */}
+      {isAdmin && (
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "14px 20px", background: "var(--gold-pale)",
+          border: "1px solid var(--gold-light)", borderRadius: "var(--radius)",
+          marginBottom: 8,
+        }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: "0.875rem", color: "var(--text)" }}>Audit Logs</div>
+            <div style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginTop: 2 }}>
+              Full activity history is available in the Audit Logs section.
             </div>
           </div>
-        )}
+          <a href="/audit-logs" className="btn btn-gold btn-sm" style={{ textDecoration: "none" }}>
+            View Logs →
+          </a>
+        </div>
+      )}
     </>
   );
 }

@@ -1,25 +1,26 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { useAuth } from "../context/AuthContext";
 
 const API_BASE = "https://antar-yoga-api.onrender.com";
 
 export default function Login() {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [username, setUsername]       = useState("");
+  const [password, setPassword]       = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError]             = useState("");
+  const [loading, setLoading]         = useState(false);
 
-  const navigate = useNavigate();
+  const navigate    = useNavigate();
+  const { setUser } = useAuth();
 
   async function handleSubmit(e) {
     e.preventDefault();
-
     setError("");
     setLoading(true);
 
     try {
-      // FastAPI OAuth2 login requires form-urlencoded data
       const params = new URLSearchParams();
       params.append("username", username.trim());
       params.append("password", password);
@@ -28,75 +29,40 @@ export default function Login() {
         `${API_BASE}/auth/login`,
         params,
         {
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-          },
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
           timeout: 30000,
         }
       );
 
-      console.log("LOGIN RESPONSE:", response.data);
+      const { access_token, username: uname, role } = response.data;
 
-      const token = response.data.access_token;
-      const loggedInUsername = response.data.username || username.trim();
+      if (!access_token) throw new Error("No access token returned.");
 
-      if (!token) {
-        throw new Error("No access token returned by server.");
-      }
+      localStorage.setItem("token",    access_token);
+      localStorage.setItem("username", uname);
 
-      // Save token
-      localStorage.setItem("token", token);
-      localStorage.setItem("username", loggedInUsername);
+      // Hydrate AuthContext immediately — avoids the blink/stuck loading screen
+      // because AuthGuard sees a non-null user on the very next render.
+      // No second /auth/me call needed here; AuthContext will confirm on mount.
+      setUser({ id: null, username: uname, role: role || "staff" });
 
-      // Verify token directly
-      const meResponse = await axios.get(
-        `${API_BASE}/auth/me`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          timeout: 30000,
-        }
-      );
-
-      console.log("AUTH ME RESPONSE:", meResponse.data);
-
-      // Save user information
-      localStorage.setItem(
-        "user",
-        JSON.stringify(meResponse.data)
-      );
-
-      // Login successful
       navigate("/", { replace: true });
 
     } catch (err) {
-      console.error("LOGIN ERROR:", err);
-
-      // Remove invalid token
       localStorage.removeItem("token");
       localStorage.removeItem("username");
-      localStorage.removeItem("user");
 
-      if (err.response) {
-        console.error("STATUS:", err.response.status);
-        console.error("SERVER RESPONSE:", err.response.data);
-
-        if (err.response.status === 401) {
-          setError("Invalid username or password.");
-        } else if (err.response.status === 422) {
-          setError("Please enter a valid username and password.");
-        } else {
-          setError(
-            err.response.data?.detail ||
-              `Login failed (${err.response.status}).`
-          );
-        }
+      if (err.response?.status === 401) {
+        setError("Incorrect username or password.");
+      } else if (err.response?.status === 422) {
+        setError("Please enter a valid username and password.");
       } else if (err.code === "ECONNABORTED") {
         setError("Server is taking too long to respond. Please try again.");
       } else {
         setError(
-          err.message || "Unable to connect to the server."
+          err.response?.data?.detail ||
+          err.message ||
+          "Unable to connect to the server."
         );
       }
     } finally {
@@ -105,159 +71,86 @@ export default function Login() {
   }
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background:
-          "linear-gradient(135deg, #1e1b2e 0%, #2d2645 100%)",
-        padding: "20px",
-      }}
-    >
-      <div
-        style={{
-          background: "#fff",
-          borderRadius: "16px",
-          padding: "40px 36px",
-          width: "380px",
-          maxWidth: "95vw",
-          boxShadow: "0 24px 64px rgba(0,0,0,0.3)",
-        }}
-      >
-        <div
-          style={{
-            textAlign: "center",
-            marginBottom: "28px",
-          }}
-        >
-          <div
-            style={{
-              fontSize: "40px",
-              marginBottom: "8px",
-            }}
-          >
-            🧘
-          </div>
+    <div className="login-bg">
+      <div className="login-card">
 
-          <h1
-            style={{
-              margin: 0,
-              fontSize: "1.4rem",
-              fontWeight: 700,
-              color: "#1e1b2e",
-            }}
-          >
-            Antar Yoga
-          </h1>
-
-          <p
-            style={{
-              margin: "4px 0 0",
-              fontSize: "0.85rem",
-              color: "#888",
-            }}
-          >
-            Studio Fee Manager
-          </p>
+        {/* Brand */}
+        <div className="login-brand">
+          <div className="login-lotus">✿</div>
+          <h1 className="login-title">ANTAR YOGA</h1>
+          <p className="login-subtitle">STUDIO MANAGEMENT</p>
         </div>
 
         {error && (
-          <div
-            style={{
-              marginBottom: "16px",
-              padding: "12px",
-              borderRadius: "8px",
-              background: "#fef2f2",
-              color: "#991b1b",
-              border: "1px solid #fecaca",
-              fontSize: "14px",
-            }}
-          >
-            ❌ {error}
+          <div className="login-error">
+            {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit}>
-          <div style={{ marginBottom: "16px" }}>
-            <label
-              style={{
-                display: "block",
-                marginBottom: "6px",
-                fontWeight: 600,
-                color: "#333",
-              }}
-            >
-              Username
-            </label>
+        <form onSubmit={handleSubmit} autoComplete="on">
 
+          <div className="form-group">
+            <label htmlFor="username">Username</label>
             <input
+              id="username"
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="admin"
               autoComplete="username"
+              autoFocus
               required
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                padding: "11px",
-                border: "1px solid #ccc",
-                borderRadius: "8px",
-                fontSize: "15px",
-              }}
             />
           </div>
 
-          <div style={{ marginBottom: "16px" }}>
-            <label
-              style={{
-                display: "block",
-                marginBottom: "6px",
-                fontWeight: 600,
-                color: "#333",
-              }}
-            >
-              Password
-            </label>
-
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password"
-              autoComplete="current-password"
-              required
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                padding: "11px",
-                border: "1px solid #ccc",
-                borderRadius: "8px",
-                fontSize: "15px",
-              }}
-            />
+          <div className="form-group">
+            <label htmlFor="password">Password</label>
+            <div className="password-wrap">
+              <input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                autoComplete="current-password"
+                required
+              />
+              <button
+                type="button"
+                className="password-eye"
+                onClick={() => setShowPassword((v) => !v)}
+                tabIndex={-1}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? (
+                  /* eye-off */
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/>
+                    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/>
+                    <line x1="1" y1="1" x2="23" y2="23"/>
+                  </svg>
+                ) : (
+                  /* eye */
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
 
           <button
             type="submit"
+            className="btn btn-primary login-submit"
             disabled={loading}
-            style={{
-              width: "100%",
-              padding: "12px",
-              border: "none",
-              borderRadius: "8px",
-              background: loading ? "#999" : "#4f46e5",
-              color: "#fff",
-              fontSize: "15px",
-              fontWeight: 600,
-              cursor: loading ? "not-allowed" : "pointer",
-            }}
           >
-            {loading ? "Signing in..." : "Sign In"}
+            {loading ? "Signing in…" : "Sign In"}
           </button>
+
         </form>
+
+        <p className="login-footer">ASHTANGA · HATHA · VINYASA</p>
       </div>
     </div>
   );

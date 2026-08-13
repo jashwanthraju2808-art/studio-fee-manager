@@ -1,7 +1,8 @@
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import String, Integer, Boolean, DateTime, ForeignKey, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -12,15 +13,27 @@ class Member(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
-    first_name: Mapped[str] = mapped_column(String(50))
-    last_name: Mapped[str] = mapped_column(String(50))
-    age: Mapped[int] = mapped_column(Integer)
+    # ── Core identity ──────────────────────────────────────
+    first_name: Mapped[str]           = mapped_column(String(50))
+    last_name:  Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
-    phone_number: Mapped[str] = mapped_column(String(15), unique=True)
-    email: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    # ── Date of birth — age is auto-calculated, not manually entered ──
+    date_of_birth: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    age:           Mapped[Optional[int]]  = mapped_column(Integer, nullable=True)
 
-    fee: Mapped[int] = mapped_column(Integer)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # ── Contact ────────────────────────────────────────────
+    phone_number: Mapped[str]           = mapped_column(String(15), unique=True)
+    email:        Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
+    # ── Physical health ────────────────────────────────────
+    height_cm:    Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2), nullable=True)
+    weight_kg:    Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2), nullable=True)
+    health_notes: Mapped[Optional[str]]     = mapped_column(Text, nullable=True)
+
+    # ── Studio ─────────────────────────────────────────────
+    join_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    fee:       Mapped[int]            = mapped_column(Integer)
+    is_active: Mapped[bool]           = mapped_column(Boolean, default=True)
 
     batch_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("batches.id"), nullable=True
@@ -30,12 +43,13 @@ class Member(Base):
         DateTime(timezone=True), server_default=func.now()
     )
 
-    batch: Mapped[Optional["Batch"]] = relationship(        # noqa: F821
+    # ── Relationships ──────────────────────────────────────
+    batch: Mapped[Optional["Batch"]] = relationship(           # noqa: F821
         "Batch", back_populates="members"
     )
-    payments: Mapped[list["Payment"]] = relationship(       # noqa: F821
+    payments: Mapped[list["Payment"]] = relationship(          # noqa: F821
         "Payment", back_populates="member", cascade="all, delete-orphan"
     )
-    attendances: Mapped[list["Attendance"]] = relationship( # noqa: F821
+    attendances: Mapped[list["Attendance"]] = relationship(    # noqa: F821
         "Attendance", back_populates="member", cascade="all, delete-orphan"
     )
