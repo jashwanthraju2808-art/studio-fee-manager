@@ -12,8 +12,8 @@ export default function Login() {
   const [error, setError]             = useState("");
   const [loading, setLoading]         = useState(false);
 
-  const navigate    = useNavigate();
-  const { setUser } = useAuth();
+  const navigate      = useNavigate();
+  const { setUser, setLoading: setAuthLoading } = useAuth();
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -41,10 +41,11 @@ export default function Login() {
       localStorage.setItem("token",    access_token);
       localStorage.setItem("username", uname);
 
-      // Hydrate AuthContext immediately — avoids the blink/stuck loading screen
-      // because AuthGuard sees a non-null user on the very next render.
-      // No second /auth/me call needed here; AuthContext will confirm on mount.
+      // Hydrate AuthContext immediately — avoids the blink/stuck loading screen.
+      // setLoading(false) must be called BEFORE navigate() so AuthGuard
+      // never enters the loading state when arriving at the dashboard.
       setUser({ id: null, username: uname, role: role || "staff" });
+      setAuthLoading(false);
 
       navigate("/", { replace: true });
 

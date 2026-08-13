@@ -76,6 +76,7 @@ export function AuthProvider({ children }) {
   const value = {
     user,
     setUser,
+    setLoading,   // exposed so Login can clear loading immediately after setUser
     refreshUser,
     isAdmin: user?.role === "admin",
     loading,
@@ -95,6 +96,7 @@ export function useAuth() {
     return {
       user: null,
       setUser: () => {},
+      setLoading: () => {},
       refreshUser: async () => {},
       isAdmin: false,
       loading: false,

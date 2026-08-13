@@ -1,75 +1,121 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getMembers, searchMembers, createMember, updateMember, deleteMember,
 } from "../api/memberApi";
 import { getBatches } from "../api/studioApi";
 import { sendSingleReminder, sendCustomMessage } from "../api/notificationApi";
 
-/* ── Empty form matching updated Member schema ────────────── */
+/* ─────────────────────────────────────────────────────────
+   HELPERS
+   ───────────────────────────────────────────────────────── */
+
 const EMPTY_FORM = {
-  first_name:    "",
-  last_name:     "",
-  date_of_birth: "",   // YYYY-MM-DD — age is auto-calculated server-side
-  phone_number:  "",
-  email:         "",
-  height_cm:     "",
-  weight_kg:     "",
-  health_notes:  "",
-  join_date:     "",
-  fee:           "",
-  batch_id:      "",
+  first_name: "", last_name: "", date_of_birth: "", phone_number: "",
+  email: "", height_cm: "", weight_kg: "", health_notes: "",
+  join_date: "", fee: "", batch_id: "",
 };
 
-/* ── Age helper (mirrors backend logic, client-only display) ─ */
+/** Age from DOB (mirrors backend logic, display only) */
 function calcAge(dob) {
   if (!dob) return null;
-  const today = new Date();
-  const d     = new Date(dob);
+  const today = new Date(), d = new Date(dob);
   let age = today.getFullYear() - d.getFullYear();
-  if (
-    today.getMonth() < d.getMonth() ||
-    (today.getMonth() === d.getMonth() && today.getDate() < d.getDate())
-  ) age--;
+  if (today.getMonth() < d.getMonth() ||
+     (today.getMonth() === d.getMonth() && today.getDate() < d.getDate())) age--;
   return age >= 0 ? age : null;
 }
 
-/* ── Initials avatar ─────────────────────────────────────── */
-function initials(m) {
-  return `${(m.first_name?.[0] || "").toUpperCase()}${(m.last_name?.[0] || "").toUpperCase()}` || "?";
+function displayAge(m) {
+  const a = m.date_of_birth ? calcAge(m.date_of_birth) : m.age;
+  return a != null ? `${a} yrs` : "—";
 }
 
+function initials(m) {
+  return ((m.first_name?.[0] || "") + (m.last_name?.[0] || "")).toUpperCase() || "?";
+}
+
+/** A→Z sort by first_name then last_name */
+function sortMembers(list) {
+  return [...list].sort((a, b) => {
+    const fn = (a.first_name || "").localeCompare(b.first_name || "", "en", { sensitivity: "base" });
+    if (fn !== 0) return fn;
+    return (a.last_name || "").localeCompare(b.last_name || "", "en", { sensitivity: "base" });
+  });
+}
+
+/**
+ * Group sorted members by batch.
+ * Returns array of { batchId, batchName, batchTime, members }
+ * ordered by batch start_time, with "No Batch" last.
+ */
+function groupByBatch(members, batches) {
+  const batchMap = {};
+  batches.forEach((b) => { batchMap[b.id] = b; });
+
+  const groups = {};
+  members.forEach((m) => {
+    const key = m.batch_id ?? "none";
+    if (!groups[key]) {
+      const b = m.batch_id ? batchMap[m.batch_id] : null;
+      groups[key] = {
+        batchId:   key,
+        batchName: b ? b.name : "No Batch Assigned",
+        startTime: b ? b.start_time : "99:99",
+        members:   [],
+      };
+    }
+    groups[key].members.push(m);
+  });
+
+  return Object.values(groups)
+    .sort((a, b) => a.startTime.localeCompare(b.startTime))
+    .map((g) => ({ ...g, members: sortMembers(g.members) }));
+}
+
+/* ─────────────────────────────────────────────────────────
+   COMPONENT
+   ───────────────────────────────────────────────────────── */
 export default function Members() {
-  const [members,     setMembers]     = useState([]);
-  const [batches,     setBatches]     = useState([]);
-  const [search,      setSearch]      = useState("");
-  const [filterBatch, setFilterBatch] = useState("");
-  const [loading,     setLoading]     = useState(true);
-  const [error,       setError]       = useState("");
-  const [success,     setSuccess]     = useState("");
+  const [members,      setMembers]     = useState([]);
+  const [batches,      setBatches]     = useState([]);
+  const [search,       setSearch]      = useState("");
+  const [loading,      setLoading]     = useState(true);
+  const [error,        setError]       = useState("");
+  const [success,      setSuccess]     = useState("");
+
+  /* collapsed batch sections */
+  const [collapsed,    setCollapsed]   = useState({});
 
   /* Add/Edit modal */
-  const [modalOpen,  setModalOpen]  = useState(false);
-  const [editTarget, setEditTarget] = useState(null);
-  const [form,       setForm]       = useState(EMPTY_FORM);
-  const [formError,  setFormError]  = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [modalOpen,    setModalOpen]   = useState(false);
+  const [editTarget,   setEditTarget]  = useState(null);
+  const [form,         setForm]        = useState(EMPTY_FORM);
+  const [formError,    setFormError]   = useState("");
+  const [submitting,   setSubmitting]  = useState(false);
 
-  /* Message modal */
-  const [msgModal,   setMsgModal]   = useState(false);
-  const [msgTarget,  setMsgTarget]  = useState(null);
-  const [msgText,    setMsgText]    = useState("");
-  const [msgSending, setMsgSending] = useState(false);
+  /* Per-row reminder sending state */
+  const [sendingId,    setSendingId]   = useState(null);
 
-  /* Sending state per row */
-  const [sendingId, setSendingId]   = useState(null);
+  /* ── Selection state ──────────────────────────────────── */
+  const [selected,     setSelected]    = useState(new Set()); // Set of member ids
 
-  /* ── Load ──────────────────────────────────────────────── */
-  const load = useCallback(async (batchId) => {
+  /* ── Bulk WhatsApp modal ──────────────────────────────── */
+  const [bulkModal,    setBulkModal]   = useState(false);
+  const [bulkMsg,      setBulkMsg]     = useState("");
+  const [bulkSending,  setBulkSending] = useState(false);
+
+  /* ── Single custom message modal ─────────────────────── */
+  const [msgModal,     setMsgModal]    = useState(false);
+  const [msgTarget,    setMsgTarget]   = useState(null);
+  const [msgText,      setMsgText]     = useState("");
+  const [msgSending,   setMsgSending]  = useState(false);
+
+  /* ── Load all members (no batch filter — grouping is done client-side) */
+  const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const params = batchId ? `?batch_id=${batchId}` : "";
-      const res    = await getMembers(params);
+      const res = await getMembers();
       setMembers(res.data);
     } catch {
       setError("Could not load members.");
@@ -79,20 +125,58 @@ export default function Members() {
   }, []);
 
   useEffect(() => {
-    load(filterBatch);
+    load();
     getBatches().then((r) => setBatches(r.data)).catch(() => {});
-  }, [load, filterBatch]);
+  }, [load]);
 
+  /* ── Search ───────────────────────────────────────────── */
   async function handleSearch(val) {
     setSearch(val);
-    if (!val.trim()) { load(filterBatch); return; }
+    if (!val.trim()) { load(); return; }
     try {
       const res = await searchMembers(val.trim());
       setMembers(res.data);
-    } catch { /* silently ignore */ }
+    } catch { /* ignore */ }
   }
 
-  /* ── Modal helpers ─────────────────────────────────────── */
+  /* ── Derived display list ─────────────────────────────── */
+  const groups = groupByBatch(members, batches);
+
+  /* ── Collapse toggle ──────────────────────────────────── */
+  function toggleCollapse(key) {
+    setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  /* ── Selection helpers ────────────────────────────────── */
+  function toggleOne(id) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleBatch(groupMembers) {
+    const ids   = groupMembers.map((m) => m.id);
+    const allOn = ids.every((id) => selected.has(id));
+    setSelected((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => allOn ? next.delete(id) : next.add(id));
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    const allIds = members.map((m) => m.id);
+    const allOn  = allIds.every((id) => selected.has(id));
+    setSelected(allOn ? new Set() : new Set(allIds));
+  }
+
+  function clearSelection() { setSelected(new Set()); }
+
+  const selectedMembers = members.filter((m) => selected.has(m.id));
+
+  /* ── Modal helpers ────────────────────────────────────── */
   function openAdd() {
     setEditTarget(null);
     setForm({ ...EMPTY_FORM, join_date: new Date().toISOString().slice(0, 10) });
@@ -103,15 +187,15 @@ export default function Members() {
   function openEdit(m) {
     setEditTarget(m);
     setForm({
-      first_name:    m.first_name || "",
-      last_name:     m.last_name  || "",
+      first_name:    m.first_name    || "",
+      last_name:     m.last_name     || "",
       date_of_birth: m.date_of_birth || "",
       phone_number:  m.phone_number  || "",
       email:         m.email         || "",
-      height_cm:     m.height_cm != null ? String(m.height_cm) : "",
-      weight_kg:     m.weight_kg != null ? String(m.weight_kg) : "",
-      health_notes:  m.health_notes   || "",
-      join_date:     m.join_date       || "",
+      height_cm:     m.height_cm  != null ? String(m.height_cm)  : "",
+      weight_kg:     m.weight_kg  != null ? String(m.weight_kg)  : "",
+      health_notes:  m.health_notes  || "",
+      join_date:     m.join_date     || "",
       fee:           String(m.fee),
       batch_id:      m.batch_id ? String(m.batch_id) : "",
     });
@@ -120,44 +204,37 @@ export default function Members() {
   }
 
   function closeModal() { setModalOpen(false); setFormError(""); }
+  function fld(field, value) { setForm((p) => ({ ...p, [field]: value })); }
 
-  function f(field, value) { setForm((prev) => ({ ...prev, [field]: value })); }
-
-  /* ── Submit ────────────────────────────────────────────── */
+  /* ── Submit add/edit ──────────────────────────────────── */
   async function handleSubmit(e) {
     e.preventDefault();
     setFormError("");
-
-    if (!form.first_name.trim()) { setFormError("First name is required."); return; }
+    if (!form.first_name.trim())   { setFormError("First name is required."); return; }
     if (!form.phone_number.trim()) { setFormError("Phone number is required."); return; }
     const fee = parseInt(form.fee, 10);
     if (isNaN(fee) || fee < 0)    { setFormError("Enter a valid monthly fee."); return; }
 
     const payload = {
       first_name:    form.first_name.trim(),
-      last_name:     form.last_name.trim()     || null,
-      date_of_birth: form.date_of_birth        || null,
+      last_name:     form.last_name.trim()    || null,
+      date_of_birth: form.date_of_birth       || null,
       phone_number:  form.phone_number.trim(),
-      email:         form.email.trim()         || null,
-      height_cm:     form.height_cm            ? parseFloat(form.height_cm) : null,
-      weight_kg:     form.weight_kg            ? parseFloat(form.weight_kg) : null,
-      health_notes:  form.health_notes.trim()  || null,
-      join_date:     form.join_date            || null,
+      email:         form.email.trim()        || null,
+      height_cm:     form.height_cm           ? parseFloat(form.height_cm) : null,
+      weight_kg:     form.weight_kg           ? parseFloat(form.weight_kg) : null,
+      health_notes:  form.health_notes.trim() || null,
+      join_date:     form.join_date           || null,
       fee,
-      batch_id:      form.batch_id             ? parseInt(form.batch_id, 10) : null,
+      batch_id:      form.batch_id ? parseInt(form.batch_id, 10) : null,
     };
 
     setSubmitting(true);
     try {
-      if (editTarget) {
-        await updateMember(editTarget.id, payload);
-        flash("Member updated.", "success");
-      } else {
-        await createMember(payload);
-        flash("Member added.", "success");
-      }
+      if (editTarget) { await updateMember(editTarget.id, payload); flash("Member updated.", "success"); }
+      else            { await createMember(payload);                flash("Member added.",   "success"); }
       closeModal();
-      load(filterBatch);
+      load();
     } catch (err) {
       setFormError(err.response?.data?.detail || "An error occurred.");
     } finally {
@@ -165,26 +242,26 @@ export default function Members() {
     }
   }
 
-  /* ── Delete ────────────────────────────────────────────── */
+  /* ── Deactivate ───────────────────────────────────────── */
   async function handleDelete(m) {
     if (!window.confirm(`Deactivate ${m.first_name} ${m.last_name || ""}?`)) return;
     try {
       await deleteMember(m.id);
       flash("Member deactivated.", "success");
-      load(filterBatch);
+      setSelected((prev) => { const n = new Set(prev); n.delete(m.id); return n; });
+      load();
     } catch (err) {
       flash(err.response?.data?.detail || "Could not deactivate.", "error");
     }
   }
 
-  /* ── Reminder ──────────────────────────────────────────── */
+  /* ── Individual reminder ──────────────────────────────── */
   async function handleReminder(m) {
     setSendingId(m.id);
     try {
       const res = await sendSingleReminder(m.id);
       const st  = res.data.whatsapp?.status;
-      if (st === "sent") flash(`Reminder sent to ${m.first_name}!`, "success");
-      else               flash("WhatsApp reminder sent or skipped.", "success");
+      flash(st === "sent" ? `Reminder sent to ${m.first_name}!` : "Reminder sent or skipped.", "success");
     } catch {
       flash("Could not send reminder.", "error");
     } finally {
@@ -192,13 +269,12 @@ export default function Members() {
     }
   }
 
-  /* ── Custom message ────────────────────────────────────── */
+  /* ── Individual custom message ────────────────────────── */
   function openMsgModal(m) {
     setMsgTarget(m);
     setMsgText(`Hello ${m.first_name} 🙏\n\n`);
     setMsgModal(true);
   }
-
   async function handleSendMsg(e) {
     e.preventDefault();
     if (!msgText.trim()) return;
@@ -207,11 +283,34 @@ export default function Members() {
       await sendCustomMessage(msgTarget.id, msgText);
       flash(`Message sent to ${msgTarget.first_name}!`, "success");
       setMsgModal(false);
-    } catch {
-      flash("Could not send message.", "error");
-    } finally {
-      setMsgSending(false);
+    } catch { flash("Could not send message.", "error"); }
+    finally { setMsgSending(false); }
+  }
+
+  /* ── Bulk WhatsApp ────────────────────────────────────── */
+  function openBulkModal() {
+    setBulkMsg(`Dear Member 🙏\n\nThis is a reminder from Antar Yoga.\n\nThank you,\n— Antar Yoga`);
+    setBulkModal(true);
+  }
+
+  async function handleBulkSend(e) {
+    e.preventDefault();
+    if (!bulkMsg.trim()) return;
+    setBulkSending(true);
+    let sentCount = 0, failCount = 0;
+    for (const m of selectedMembers) {
+      if (!m.phone_number) continue;
+      try {
+        await sendCustomMessage(m.id, bulkMsg);
+        sentCount++;
+      } catch {
+        failCount++;
+      }
     }
+    flash(`Sent: ${sentCount}${failCount ? `, failed: ${failCount}` : ""}.`, "success");
+    setBulkModal(false);
+    setBulkSending(false);
+    clearSelection();
   }
 
   function flash(msg, type) {
@@ -219,28 +318,162 @@ export default function Members() {
     else                    { setError(msg);   setTimeout(() => setError(""),   3500); }
   }
 
-  /* ── Age display ───────────────────────────────────────── */
-  function displayAge(m) {
-    const a = m.date_of_birth ? calcAge(m.date_of_birth) : m.age;
-    return a != null ? `${a} yrs` : "—";
+  /* ── members with / without phones ───────────────────── */
+  const withPhone    = selectedMembers.filter((m) => m.phone_number);
+  const withoutPhone = selectedMembers.filter((m) => !m.phone_number);
+
+  /* ─────────────────────────────────────────────────────────
+     SHARED ROW RENDERER
+     ───────────────────────────────────────────────────────── */
+  function MemberRow({ m, rowNum }) {
+    return (
+      <tr key={m.id}>
+        {/* Checkbox */}
+        <td style={{ width: 36, textAlign: "center" }}>
+          <input
+            type="checkbox"
+            checked={selected.has(m.id)}
+            onChange={() => toggleOne(m.id)}
+            style={{ cursor: "pointer", width: 15, height: 15 }}
+          />
+        </td>
+        {/* Display position — NOT database id */}
+        <td style={{ color: "var(--text-light)", width: 40 }}>{rowNum}</td>
+        <td>
+          <div style={{ fontWeight: 600 }}>{m.first_name} {m.last_name || ""}</div>
+          {m.email && <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{m.email}</div>}
+        </td>
+        <td>{m.phone_number}</td>
+        <td>{displayAge(m)}</td>
+        <td>
+          {m.batch_name
+            ? <span className="badge badge-info">{m.batch_name}</span>
+            : <span style={{ color: "var(--text-light)" }}>—</span>}
+        </td>
+        <td style={{ fontWeight: 600, color: "var(--sage)" }}>₹{m.fee.toLocaleString("en-IN")}</td>
+        <td>
+          {(m.height_cm || m.weight_kg || m.health_notes)
+            ? <span className="badge badge-muted" title={[
+                m.height_cm    ? `Height: ${m.height_cm} cm`   : null,
+                m.weight_kg    ? `Weight: ${m.weight_kg} kg`   : null,
+                m.health_notes ? `Notes: ${m.health_notes}`    : null,
+              ].filter(Boolean).join(" · ")}>📋 On file</span>
+            : <span style={{ color: "var(--text-light)" }}>—</span>}
+        </td>
+        <td>
+          <span className={`badge ${m.is_active ? "badge-success" : "badge-danger"}`}>
+            {m.is_active ? "Active" : "Inactive"}
+          </span>
+        </td>
+        <td>
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+            <button className="btn btn-outline btn-sm" onClick={() => openEdit(m)}>Edit</button>
+            <button className="btn btn-outline btn-sm" onClick={() => handleReminder(m)}
+              disabled={sendingId === m.id} title="Send fee reminder">
+              {sendingId === m.id ? "…" : "📲"}
+            </button>
+            <button className="btn btn-outline btn-sm" onClick={() => openMsgModal(m)} title="Custom message">💬</button>
+            <button className="btn btn-danger btn-sm" onClick={() => handleDelete(m)}>✕</button>
+          </div>
+        </td>
+      </tr>
+    );
   }
 
-  /* ═══════════════════════════════════════════════════════
-     RENDER — DESKTOP TABLE + MOBILE CARDS
-     ═══════════════════════════════════════════════════════ */
+  /* ─────────────────────────────────────────────────────────
+     BATCH SECTION (desktop)
+     ───────────────────────────────────────────────────────── */
+  function BatchSection({ group }) {
+    const key        = group.batchId;
+    const isCollapsed = !!collapsed[key];
+    const batchMembers = group.members;
+    const allChecked  = batchMembers.length > 0 && batchMembers.every((m) => selected.has(m.id));
+    const someChecked = batchMembers.some((m) => selected.has(m.id));
+
+    return (
+      <div className="card" style={{ padding: 0, marginBottom: 20, overflow: "hidden" }}>
+        {/* Batch header */}
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "12px 18px",
+          background: "var(--cream-deep)",
+          borderBottom: isCollapsed ? "none" : "1px solid var(--border)",
+          cursor: "pointer",
+          userSelect: "none",
+        }}
+          onClick={() => toggleCollapse(key)}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {/* Batch select-all checkbox — stop propagation so click doesn't collapse */}
+            <input
+              type="checkbox"
+              checked={allChecked}
+              ref={(el) => { if (el) el.indeterminate = someChecked && !allChecked; }}
+              onChange={(e) => { e.stopPropagation(); toggleBatch(batchMembers); }}
+              onClick={(e) => e.stopPropagation()}
+              style={{ cursor: "pointer", width: 15, height: 15 }}
+              title="Select all in this batch"
+            />
+            <span style={{ fontWeight: 700, fontSize: "0.95rem", color: "var(--text)" }}>
+              {group.batchName}
+            </span>
+            <span className="badge badge-muted" style={{ fontSize: "0.72rem" }}>
+              {batchMembers.length} member{batchMembers.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+          <span style={{ color: "var(--text-muted)", fontSize: "0.8rem" }}>
+            {isCollapsed ? "▶ expand" : "▼ collapse"}
+          </span>
+        </div>
+
+        {/* Members table */}
+        {!isCollapsed && (
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th style={{ width: 36 }}></th>
+                  <th style={{ width: 40 }}>#</th>
+                  <th>Name</th>
+                  <th>Phone</th>
+                  <th>Age</th>
+                  <th>Batch</th>
+                  <th>Fee / mo</th>
+                  <th>Health</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {batchMembers.length === 0 ? (
+                  <tr><td colSpan="10" className="empty">No members in this batch.</td></tr>
+                ) : batchMembers.map((m, idx) => (
+                  <MemberRow key={m.id} m={m} rowNum={idx + 1} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  /* ─────────────────────────────────────────────────────────
+     RENDER
+     ───────────────────────────────────────────────────────── */
   return (
     <>
+      {/* ── Page header ─────────────────────────────────── */}
       <div className="page-header">
         <h1>Members</h1>
-        {/* Desktop add button */}
         <button className="btn btn-primary desktop-only" onClick={openAdd}>+ Add Member</button>
       </div>
 
       {error   && <div className="alert alert-error">{error}</div>}
       {success && <div className="alert alert-success">{success}</div>}
 
-      {/* ── Filters ──────────────────────────────────────── */}
-      <div className="card" style={{ padding: "14px 18px", marginBottom: 16 }}>
+      {/* ── Toolbar ─────────────────────────────────────── */}
+      <div className="card" style={{ padding: "12px 16px", marginBottom: 16 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <input
             type="text"
@@ -249,150 +482,87 @@ export default function Members() {
             onChange={(e) => handleSearch(e.target.value)}
             style={{ flex: "1 1 200px", minWidth: 140 }}
           />
-          <select
-            value={filterBatch}
-            onChange={(e) => setFilterBatch(e.target.value)}
-            style={{ flex: "0 0 auto", minWidth: 160 }}
-          >
-            <option value="">All Batches</option>
-            {batches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-          </select>
-          <button className="btn btn-outline btn-sm" onClick={() => load(filterBatch)}>↺</button>
+          <button className="btn btn-outline btn-sm" onClick={toggleAll}>
+            {members.length > 0 && members.every((m) => selected.has(m.id))
+              ? "☐ Deselect All" : "☑ Select All"}
+          </button>
+          {selected.size > 0 && (
+            <>
+              <span style={{ fontSize: "0.85rem", color: "var(--sage)", fontWeight: 600 }}>
+                {selected.size} member{selected.size !== 1 ? "s" : ""} selected
+              </span>
+              <button className="btn btn-success btn-sm" onClick={openBulkModal}>
+                📲 Send WhatsApp
+              </button>
+              <button className="btn btn-outline btn-sm" onClick={clearSelection}>
+                ✕ Clear
+              </button>
+            </>
+          )}
+          <button className="btn btn-outline btn-sm" style={{ marginLeft: "auto" }} onClick={load}>↺</button>
         </div>
       </div>
 
+      {/* ── Members grouped by batch ─────────────────────── */}
       {loading ? (
         <div className="loading">Loading members…</div>
+      ) : members.length === 0 ? (
+        <div className="card"><div className="empty">No members found.</div></div>
       ) : (
-        <>
-          {/* ── DESKTOP TABLE ─────────────────────────────── */}
-          <div className="card desktop-only" style={{ padding: 0, overflow: "hidden" }}>
-            <div className="table-wrapper">
-              <table>
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Name</th>
-                    <th>Phone</th>
-                    <th>Age</th>
-                    <th>Batch</th>
-                    <th>Fee / mo</th>
-                    <th>Health</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {members.length === 0 ? (
-                    <tr><td colSpan="9" className="empty">No members found.</td></tr>
-                  ) : members.map((m) => (
-                    <tr key={m.id}>
-                      <td style={{ color: "var(--text-light)" }}>{m.id}</td>
-                      <td>
-                        <div style={{ fontWeight: 600 }}>{m.first_name} {m.last_name || ""}</div>
-                        {m.email && <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{m.email}</div>}
-                      </td>
-                      <td>{m.phone_number}</td>
-                      <td>{displayAge(m)}</td>
-                      <td>
-                        {m.batch_name
-                          ? <span className="badge badge-info">{m.batch_name}</span>
-                          : <span style={{ color: "var(--text-light)" }}>—</span>}
-                      </td>
-                      <td style={{ fontWeight: 600, color: "var(--sage)" }}>₹{m.fee.toLocaleString("en-IN")}</td>
-                      <td>
-                        {(m.height_cm || m.weight_kg || m.health_notes) ? (
-                          <span className="badge badge-muted" title={[
-                            m.height_cm  ? `Height: ${m.height_cm} cm`  : null,
-                            m.weight_kg  ? `Weight: ${m.weight_kg} kg`  : null,
-                            m.health_notes ? `Notes: ${m.health_notes}` : null,
-                          ].filter(Boolean).join(" · ")}>
-                            📋 On file
-                          </span>
-                        ) : <span style={{ color: "var(--text-light)" }}>—</span>}
-                      </td>
-                      <td>
-                        <span className={`badge ${m.is_active ? "badge-success" : "badge-danger"}`}>
-                          {m.is_active ? "Active" : "Inactive"}
-                        </span>
-                      </td>
-                      <td>
-                        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                          <button className="btn btn-outline btn-sm" onClick={() => openEdit(m)}>Edit</button>
-                          <button
-                            className="btn btn-outline btn-sm"
-                            onClick={() => handleReminder(m)}
-                            disabled={sendingId === m.id}
-                            title="Send fee reminder"
-                          >
-                            {sendingId === m.id ? "…" : "📲"}
-                          </button>
-                          <button
-                            className="btn btn-outline btn-sm"
-                            onClick={() => openMsgModal(m)}
-                            title="Send custom message"
-                          >
-                            💬
-                          </button>
-                          <button
-                            className="btn btn-danger btn-sm"
-                            onClick={() => handleDelete(m)}
-                          >
-                            ✕
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+        <div className="desktop-only">
+          {groups.map((g) => <BatchSection key={g.batchId} group={g} />)}
+        </div>
+      )}
 
-          {/* ── MOBILE CARDS ──────────────────────────────── */}
-          <div className="mobile-only">
-            <div className="member-cards">
-              {members.length === 0 ? (
-                <div className="empty">No members found.</div>
-              ) : members.map((m) => (
-                <div key={m.id} className="member-card">
-                  <div className="member-card-avatar">{initials(m)}</div>
-                  <div className="member-card-body">
-                    <div className="member-card-name">{m.first_name} {m.last_name || ""}</div>
-                    <div className="member-card-meta">
-                      {m.phone_number}
-                      {m.batch_name && <> · <span style={{ color: "var(--sage)" }}>{m.batch_name}</span></>}
-                      {m.date_of_birth || m.age ? <> · {displayAge(m)}</> : null}
-                    </div>
-                    {(m.height_cm || m.weight_kg) && (
-                      <div className="member-card-meta" style={{ marginTop: 2 }}>
-                        {m.height_cm && <span>{m.height_cm} cm</span>}
-                        {m.height_cm && m.weight_kg && <span> · </span>}
-                        {m.weight_kg && <span>{m.weight_kg} kg</span>}
+      {/* ── MOBILE CARDS ─────────────────────────────────── */}
+      {!loading && members.length > 0 && (
+        <div className="mobile-only">
+          {groups.map((g) => (
+            <div key={g.batchId} style={{ marginBottom: 20 }}>
+              <div style={{
+                padding: "8px 12px",
+                background: "var(--cream-deep)",
+                borderRadius: "var(--radius) var(--radius) 0 0",
+                fontWeight: 700, fontSize: "0.9rem",
+                border: "1px solid var(--border)", borderBottom: "none",
+              }}>
+                {g.batchName}
+                <span className="badge badge-muted" style={{ marginLeft: 8, fontSize: "0.7rem" }}>
+                  {g.members.length}
+                </span>
+              </div>
+              <div className="member-cards" style={{ border: "1px solid var(--border)", borderRadius: "0 0 var(--radius) var(--radius)", padding: 10 }}>
+                {g.members.map((m, idx) => (
+                  <div key={m.id} className="member-card">
+                    <input type="checkbox" checked={selected.has(m.id)} onChange={() => toggleOne(m.id)}
+                      style={{ marginRight: 6, cursor: "pointer" }} />
+                    <div className="member-card-avatar" style={{ fontSize: "0.85rem" }}>{initials(m)}</div>
+                    <div className="member-card-body">
+                      <div className="member-card-name">
+                        <span style={{ color: "var(--text-muted)", fontSize: "0.75rem", marginRight: 6 }}>{idx + 1}.</span>
+                        {m.first_name} {m.last_name || ""}
                       </div>
-                    )}
-                    <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                      <button className="btn btn-outline btn-sm" onClick={() => openEdit(m)}>Edit</button>
-                      <button
-                        className="btn btn-outline btn-sm"
-                        onClick={() => handleReminder(m)}
-                        disabled={sendingId === m.id}
-                      >
-                        {sendingId === m.id ? "…" : "📲"}
-                      </button>
-                      <button className="btn btn-outline btn-sm" onClick={() => openMsgModal(m)}>💬</button>
-                      <button className="btn btn-danger btn-sm" onClick={() => handleDelete(m)}>✕</button>
+                      <div className="member-card-meta">
+                        {m.phone_number}
+                        {m.batch_name && <> · <span style={{ color: "var(--sage)" }}>{m.batch_name}</span></>}
+                        {(m.date_of_birth || m.age) && <> · {displayAge(m)}</>}
+                      </div>
+                      <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+                        <button className="btn btn-outline btn-sm" onClick={() => openEdit(m)}>Edit</button>
+                        <button className="btn btn-outline btn-sm" onClick={() => handleReminder(m)}
+                          disabled={sendingId === m.id}>{sendingId === m.id ? "…" : "📲"}</button>
+                        <button className="btn btn-outline btn-sm" onClick={() => openMsgModal(m)}>💬</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => handleDelete(m)}>✕</button>
+                      </div>
                     </div>
+                    <div className="member-card-fee">₹{m.fee.toLocaleString("en-IN")}</div>
                   </div>
-                  <div className="member-card-fee">₹{m.fee.toLocaleString("en-IN")}</div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-
-            {/* FAB — mobile add button */}
-            <button className="fab" onClick={openAdd} aria-label="Add Member">+</button>
-          </div>
-        </>
+          ))}
+          <button className="fab" onClick={openAdd} aria-label="Add Member">+</button>
+        </div>
       )}
 
       {/* ════════════════════════════════════════════════════
@@ -401,45 +571,27 @@ export default function Members() {
       {modalOpen && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeModal()}>
           <div className="modal">
-
             <h2>{editTarget ? "Edit Member" : "Add Member"}</h2>
-
             {formError && <div className="alert alert-error">{formError}</div>}
-
             <form onSubmit={handleSubmit}>
 
-              {/* ── IDENTITY ─────────────────────────────── */}
               <div className="modal-section-label">Identity</div>
-
               <div className="form-row">
                 <div className="form-group">
                   <label>First Name *</label>
-                  <input
-                    value={form.first_name}
-                    onChange={(e) => f("first_name", e.target.value)}
-                    placeholder="Ananya"
-                    required
-                  />
+                  <input value={form.first_name} onChange={(e) => fld("first_name", e.target.value)} placeholder="Ananya" required />
                 </div>
                 <div className="form-group">
                   <label>Last Name</label>
-                  <input
-                    value={form.last_name}
-                    onChange={(e) => f("last_name", e.target.value)}
-                    placeholder="Sharma"
-                  />
+                  <input value={form.last_name} onChange={(e) => fld("last_name", e.target.value)} placeholder="Sharma" />
                 </div>
               </div>
-
               <div className="form-row">
                 <div className="form-group">
                   <label>Date of Birth</label>
-                  <input
-                    type="date"
-                    value={form.date_of_birth}
-                    onChange={(e) => f("date_of_birth", e.target.value)}
-                    max={new Date().toISOString().slice(0, 10)}
-                  />
+                  <input type="date" value={form.date_of_birth}
+                    onChange={(e) => fld("date_of_birth", e.target.value)}
+                    max={new Date().toISOString().slice(0, 10)} />
                   {form.date_of_birth && (
                     <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: 4 }}>
                       Age: <strong>{calcAge(form.date_of_birth)} years</strong>
@@ -448,125 +600,146 @@ export default function Members() {
                 </div>
                 <div className="form-group">
                   <label>Join Date</label>
-                  <input
-                    type="date"
-                    value={form.join_date}
-                    onChange={(e) => f("join_date", e.target.value)}
-                  />
+                  <input type="date" value={form.join_date} onChange={(e) => fld("join_date", e.target.value)} />
                 </div>
               </div>
 
-              {/* ── CONTACT ──────────────────────────────── */}
               <div className="modal-section-label">Contact</div>
-
               <div className="form-row">
                 <div className="form-group">
                   <label>Phone Number *</label>
-                  <input
-                    value={form.phone_number}
-                    onChange={(e) => f("phone_number", e.target.value)}
-                    placeholder="9876543210"
-                    required
-                  />
+                  <input value={form.phone_number} onChange={(e) => fld("phone_number", e.target.value)} placeholder="9876543210" required />
                 </div>
                 <div className="form-group">
                   <label>Email</label>
-                  <input
-                    type="email"
-                    value={form.email}
-                    onChange={(e) => f("email", e.target.value)}
-                    placeholder="ananya@example.com"
-                  />
+                  <input type="email" value={form.email} onChange={(e) => fld("email", e.target.value)} placeholder="ananya@example.com" />
                 </div>
               </div>
 
-              {/* ── STUDIO ───────────────────────────────── */}
               <div className="modal-section-label">Studio</div>
-
               <div className="form-row">
                 <div className="form-group">
                   <label>Monthly Fee (₹) *</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.fee}
-                    onChange={(e) => f("fee", e.target.value)}
-                    placeholder="1500"
-                    required
-                  />
+                  <input type="number" min="0" value={form.fee}
+                    onChange={(e) => fld("fee", e.target.value)} placeholder="1500" required />
                 </div>
                 <div className="form-group">
                   <label>Batch</label>
-                  <select
-                    value={form.batch_id}
-                    onChange={(e) => f("batch_id", e.target.value)}
-                  >
+                  <select value={form.batch_id} onChange={(e) => fld("batch_id", e.target.value)}>
                     <option value="">— No batch —</option>
-                    {batches.map((b) => (
-                      <option key={b.id} value={b.id}>{b.name}</option>
-                    ))}
+                    {batches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                   </select>
                 </div>
               </div>
 
-              {/* ── HEALTH ───────────────────────────────── */}
               <div className="modal-section-label">Health & Physical</div>
-
               <div className="form-row">
                 <div className="form-group">
                   <label>Height (cm)</label>
-                  <input
-                    type="number"
-                    min="50"
-                    max="250"
-                    step="0.1"
-                    value={form.height_cm}
-                    onChange={(e) => f("height_cm", e.target.value)}
-                    placeholder="165.0"
-                  />
+                  <input type="number" min="50" max="250" step="0.1" value={form.height_cm}
+                    onChange={(e) => fld("height_cm", e.target.value)} placeholder="165.0" />
                 </div>
                 <div className="form-group">
                   <label>Weight (kg)</label>
-                  <input
-                    type="number"
-                    min="10"
-                    max="300"
-                    step="0.1"
-                    value={form.weight_kg}
-                    onChange={(e) => f("weight_kg", e.target.value)}
-                    placeholder="62.5"
-                  />
+                  <input type="number" min="10" max="300" step="0.1" value={form.weight_kg}
+                    onChange={(e) => fld("weight_kg", e.target.value)} placeholder="62.5" />
                 </div>
               </div>
-
               <div className="form-group">
                 <label>Medical Conditions / Health Notes</label>
-                <textarea
-                  rows={3}
-                  value={form.health_notes}
-                  onChange={(e) => f("health_notes", e.target.value)}
+                <textarea rows={3} value={form.health_notes}
+                  onChange={(e) => fld("health_notes", e.target.value)}
                   placeholder="e.g. Lower back pain, hypertension, knee injury…"
-                  style={{ resize: "vertical" }}
-                />
+                  style={{ resize: "vertical" }} />
               </div>
 
-              {/* ── Footer ───────────────────────────────── */}
               <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={closeModal}>
-                  Cancel
-                </button>
+                <button type="button" className="btn btn-outline" onClick={closeModal}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={submitting}>
                   {submitting ? "Saving…" : editTarget ? "Update Member" : "Add Member"}
                 </button>
               </div>
-
             </form>
           </div>
         </div>
       )}
 
       {/* ════════════════════════════════════════════════════
-          CUSTOM MESSAGE MODAL
+          BULK WHATSAPP MODAL
+          ════════════════════════════════════════════════════ */}
+      {bulkModal && (
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setBulkModal(false)}>
+          <div className="modal">
+            <h2>📲 Send WhatsApp Message</h2>
+
+            {/* Recipients preview */}
+            <div style={{ marginBottom: 16, padding: "10px 14px", background: "var(--cream)", borderRadius: 8, border: "1px solid var(--border)" }}>
+              <div style={{ fontWeight: 600, fontSize: "0.85rem", marginBottom: 6 }}>
+                {withPhone.length} recipient{withPhone.length !== 1 ? "s" : ""}
+              </div>
+              {withPhone.map((m) => (
+                <div key={m.id} style={{ fontSize: "0.82rem", color: "var(--text-muted)" }}>
+                  ✓ {m.first_name} {m.last_name || ""} — {m.phone_number}
+                </div>
+              ))}
+              {withoutPhone.length > 0 && (
+                <div style={{ marginTop: 8, borderTop: "1px solid var(--border)", paddingTop: 8 }}>
+                  <div style={{ fontSize: "0.78rem", color: "var(--danger)", fontWeight: 600, marginBottom: 4 }}>
+                    ⚠ No phone number — will be skipped:
+                  </div>
+                  {withoutPhone.map((m) => (
+                    <div key={m.id} style={{ fontSize: "0.78rem", color: "var(--danger)" }}>
+                      {m.first_name} {m.last_name || ""}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {withPhone.length === 0 ? (
+              <div className="alert alert-error">None of the selected members have a phone number.</div>
+            ) : (
+              <form onSubmit={handleBulkSend}>
+                <div className="form-group">
+                  <label>Message *</label>
+                  <textarea rows={6} value={bulkMsg} onChange={(e) => setBulkMsg(e.target.value)}
+                    placeholder="Type your message here…" required style={{ resize: "vertical" }} />
+                  <div style={{ fontSize: "0.72rem", color: "var(--text-light)", marginTop: 4, textAlign: "right" }}>
+                    {bulkMsg.length} characters
+                  </div>
+                </div>
+
+                {/* Quick templates */}
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>Quick templates</div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {[
+                      { label: "Fee Reminder",    text: "Dear Member 🙏\n\nYour monthly Antar Yoga fee is due. Please make the payment at your earliest convenience.\n\nThank you!\n— Antar Yoga" },
+                      { label: "Class Cancelled", text: "Dear Member,\n\nToday's class has been cancelled. We'll resume tomorrow as usual.\n\nSorry for the inconvenience 🙏\n— Antar Yoga" },
+                      { label: "Holiday Notice",  text: "Dear Member,\n\nThe studio will be closed tomorrow. Classes will resume the day after.\n\nThank you 🙏\n— Antar Yoga" },
+                    ].map((t) => (
+                      <button key={t.label} type="button" className="btn btn-outline btn-sm"
+                        onClick={() => setBulkMsg(t.text)}>{t.label}</button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-outline" onClick={() => setBulkModal(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-success" disabled={bulkSending || !bulkMsg.trim()}>
+                    {bulkSending
+                      ? "Sending…"
+                      : `📲 Send to ${withPhone.length} member${withPhone.length !== 1 ? "s" : ""}`}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════
+          SINGLE CUSTOM MESSAGE MODAL
           ════════════════════════════════════════════════════ */}
       {msgModal && msgTarget && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setMsgModal(false)}>
@@ -575,50 +748,29 @@ export default function Members() {
             <p style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginBottom: 16 }}>
               To: <strong>{msgTarget.first_name} {msgTarget.last_name || ""}</strong> · {msgTarget.phone_number}
             </p>
-
             <form onSubmit={handleSendMsg}>
               <div className="form-group">
                 <label>Message *</label>
-                <textarea
-                  rows={6}
-                  value={msgText}
-                  onChange={(e) => setMsgText(e.target.value)}
-                  placeholder="Type your message here…"
-                  required
-                  style={{ resize: "vertical" }}
-                />
+                <textarea rows={6} value={msgText} onChange={(e) => setMsgText(e.target.value)}
+                  placeholder="Type your message…" required style={{ resize: "vertical" }} />
                 <div style={{ fontSize: "0.72rem", color: "var(--text-light)", marginTop: 4, textAlign: "right" }}>
                   {msgText.length} characters
                 </div>
               </div>
-
-              {/* Quick templates */}
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                  Quick templates
-                </div>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>Quick templates</div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {[
                     { label: "Fee Reminder",    text: `Hello ${msgTarget.first_name} 🙏\n\nYour monthly fee of ₹${msgTarget.fee} is due. Please pay at your earliest convenience.\n\nThank you!\n— Antar Yoga` },
                     { label: "Class Cancelled", text: `Hello ${msgTarget.first_name},\n\nToday's class has been cancelled. We'll resume tomorrow as usual.\n\nSorry for the inconvenience 🙏\n— Antar Yoga` },
-                    { label: "Holiday Notice",  text: `Hello ${msgTarget.first_name},\n\nThe studio will be closed tomorrow. Classes will resume as scheduled from the day after.\n\nThank you 🙏\n— Antar Yoga` },
+                    { label: "Holiday Notice",  text: `Hello ${msgTarget.first_name},\n\nThe studio will be closed tomorrow. Classes resume the day after.\n\nThank you 🙏\n— Antar Yoga` },
                   ].map((t) => (
-                    <button
-                      key={t.label}
-                      type="button"
-                      className="btn btn-outline btn-sm"
-                      onClick={() => setMsgText(t.text)}
-                    >
-                      {t.label}
-                    </button>
+                    <button key={t.label} type="button" className="btn btn-outline btn-sm" onClick={() => setMsgText(t.text)}>{t.label}</button>
                   ))}
                 </div>
               </div>
-
               <div className="modal-footer">
-                <button type="button" className="btn btn-outline" onClick={() => setMsgModal(false)}>
-                  Cancel
-                </button>
+                <button type="button" className="btn btn-outline" onClick={() => setMsgModal(false)}>Cancel</button>
                 <button type="submit" className="btn btn-success" disabled={msgSending || !msgText.trim()}>
                   {msgSending ? "Sending…" : "📲 Send"}
                 </button>
