@@ -177,7 +177,7 @@ export default function Layout() {
             style={{ display: "none" }}
             onChange={handleLogoUpload}
           />
-          <div className="sidebar-app-name" style={{ fontFamily: "var(--font-brand)", fontSize: "1.55rem", letterSpacing: "0.02em" }}>ANTAR YOGA</div>
+          <div className="sidebar-app-name">ANTAR YOGA</div>
           <div className="sidebar-app-sub">Studio Management</div>
         </div>
 
@@ -208,6 +208,17 @@ export default function Layout() {
             <span className="nav-icon" style={{ width: 15, height: 15 }}>{Icons.logout}</span>
             Sign Out
           </button>
+        </div>
+
+        {/* ── Decorative sidebar artwork ── */}
+        {/* Place antar-yoga-sidebar-art.jpg in frontend/public/images/ */}
+        <div className="sidebar-art-wrap" aria-hidden="true">
+          <img
+            src="/images/antar-yoga-sidebar-art.jpg"
+            alt=""
+            className="sidebar-art"
+            onError={(e) => { e.currentTarget.style.display = "none"; }}
+          />
         </div>
       </aside>
 

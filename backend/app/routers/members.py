@@ -16,7 +16,6 @@ router = APIRouter(prefix="/members", tags=["Members"])
 
 
 def _calculate_age(dob: date) -> int:
-    """Age in whole years from date of birth."""
     today = date.today()
     return today.year - dob.year - (
         1 if (today.month, today.day) < (dob.month, dob.day) else 0
@@ -32,7 +31,12 @@ def _base_q(db: Session):
     )
 
 
-# ── List / search ──────────────────────────────────────────
+def _all_q(db: Session):
+    """All members (any status) with batch eager-loaded."""
+    return db.query(Member).options(joinedload(Member.batch))
+
+
+# ── List active ────────────────────────────────────────────
 
 @router.get("/", response_model=List[MemberResponse])
 def get_members(
@@ -44,6 +48,24 @@ def get_members(
         q = q.filter(Member.batch_id == batch_id)
     return q.order_by(Member.first_name).all()
 
+
+# ── List inactive / discontinued ──────────────────────────
+
+@router.get("/inactive", response_model=List[MemberResponse])
+def get_inactive_members(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Return all discontinued (is_active=False) members."""
+    return (
+        _all_q(db)
+        .filter(Member.is_active == False)  # noqa: E712
+        .order_by(Member.first_name)
+        .all()
+    )
+
+
+# ── Search ─────────────────────────────────────────────────
 
 @router.get("/search", response_model=List[MemberResponse])
 def search_members(
@@ -63,7 +85,8 @@ def search_members(
 
 @router.get("/{member_id}", response_model=MemberResponse)
 def get_member(member_id: int, db: Session = Depends(get_db)):
-    member = _base_q(db).filter(Member.id == member_id).first()
+    # Allow fetching any member (active or not) for display purposes
+    member = _all_q(db).filter(Member.id == member_id).first()
     if not member:
         raise HTTPException(status_code=404, detail="Member not found")
     return member
@@ -81,8 +104,6 @@ def add_member(
         raise HTTPException(status_code=400, detail="Phone number already exists")
 
     data = payload.model_dump()
-
-    # Auto-calculate age from DOB; ignore any client-supplied age
     if data.get("date_of_birth"):
         data["age"] = _calculate_age(data["date_of_birth"])
 
@@ -103,10 +124,7 @@ def add_member(
     db.commit()
     db.refresh(new_member)
 
-    # ── Auto first-month payment ──────────────────────────
-    # Create a payment for the current month automatically when fee > 0.
-    # Guard: never create a duplicate if one already exists for this member+month.
-    # Edit member (PUT) does NOT reach this code — safe from duplicates.
+    # ── Auto first-month payment (status = paid) ───────────
     if new_member.fee and new_member.fee > 0:
         current_month = date.today().strftime("%Y-%m")
         duplicate = db.query(Payment).filter(
@@ -120,6 +138,7 @@ def add_member(
                 month        = current_month,
                 payment_date = date.today(),
                 note         = "Auto-recorded on member registration",
+                status       = "paid",          # ← explicitly paid
             )
             db.add(auto_pay)
             log_action(
@@ -128,7 +147,7 @@ def add_member(
                 action="CREATE",
                 module="Payments",
                 description=(
-                    f"Auto-payment of ₹{new_member.fee} created for "
+                    f"Auto-payment of ₹{new_member.fee} (paid) created for "
                     f"'{new_member.first_name} {new_member.last_name or ''}' "
                     f"(month: {current_month}) on member registration"
                 ),
@@ -151,7 +170,6 @@ def update_member(
     if not existing:
         raise HTTPException(status_code=404, detail="Member not found")
 
-    # Phone uniqueness check (exclude self)
     phone_owner = db.query(Member).filter(
         Member.phone_number == payload.phone_number,
         Member.id != member_id,
@@ -160,8 +178,6 @@ def update_member(
         raise HTTPException(status_code=400, detail="Phone number already exists")
 
     data = payload.model_dump()
-
-    # Auto-calculate age from DOB
     if data.get("date_of_birth"):
         data["age"] = _calculate_age(data["date_of_birth"])
 
@@ -182,7 +198,7 @@ def update_member(
     return _base_q(db).filter(Member.id == member_id).first()
 
 
-# ── Deactivate (soft-delete) ───────────────────────────────
+# ── Soft-delete (deactivate) ───────────────────────────────
 
 @router.delete("/{member_id}")
 def delete_member(
@@ -206,7 +222,7 @@ def delete_member(
         action="DEACTIVATE",
         module="Members",
         description=(
-            f"Member '{member_name}' (id={member_id}, phone={member.phone_number}) "
+            f"Member '{member_name}' (id={member_id}) "
             f"deactivated by '{current_user.username}'"
         ),
     )
@@ -214,7 +230,7 @@ def delete_member(
     return {"message": "Member marked as inactive"}
 
 
-# ── Toggle active/inactive (Continue / Discontinue) ───────
+# ── Toggle Continued / Discontinued ───────────────────────
 
 @router.patch("/{member_id}/status")
 def toggle_member_status(
@@ -222,11 +238,6 @@ def toggle_member_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Toggle a member between Continued (is_active=True) and
-    Discontinued (is_active=False).  Works on both active and
-    inactive members — used from the Attendance page.
-    """
     member = db.query(Member).filter(Member.id == member_id).first()
     if not member:
         raise HTTPException(status_code=404, detail="Member not found")

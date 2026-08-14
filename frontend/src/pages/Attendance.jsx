@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from "react";
-import { getMembers, toggleMemberStatus } from "../api/memberApi";
+import { getMembers, getInactiveMembers, toggleMemberStatus } from "../api/memberApi";
 import { getBatches } from "../api/studioApi";
 import { getAttendance, markAttendance, getAttendanceReport } from "../api/attendanceApi";
+import { openWhatsApp, normalizePhone, msgAbsent } from "../utils/whatsapp";
 
 const today      = new Date();
 const THIS_MONTH = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
@@ -35,9 +36,9 @@ function groupByBatch(members, batches) {
 }
 
 export default function Attendance() {
-  const [activeMembers, setActiveMembers]   = useState([]);   // is_active == true
-  const [discMembers,   setDiscMembers]     = useState([]);   // is_active == false (for manage tab)
-  const [batches,       setBatches]         = useState([]);
+  const [activeMembers, setActiveMembers]     = useState([]);
+  const [inactiveMembers, setInactiveMembers] = useState([]);
+  const [batches,         setBatches]         = useState([]);
   const [month,         setMonth]           = useState(THIS_MONTH);
   const [selDate,       setSelDate]         = useState(todayStr);
   const [attendance,    setAttendance]      = useState([]);
@@ -48,11 +49,13 @@ export default function Attendance() {
   const [success,       setSuccess]         = useState("");
   const [togglingId,    setTogglingId]      = useState(null);
 
-  /* ── Load active members + batches ─────────────────────── */
   const loadMembers = useCallback(async () => {
     try {
-      const [mRes, bRes] = await Promise.all([getMembers(), getBatches()]);
+      const [mRes, iRes, bRes] = await Promise.all([
+        getMembers(), getInactiveMembers(), getBatches(),
+      ]);
       setActiveMembers(mRes.data);
+      setInactiveMembers(iRes.data);
       setBatches(bRes.data);
     } catch { /* non-fatal */ }
   }, []);
@@ -60,14 +63,9 @@ export default function Attendance() {
   /* ── Load ALL members (active + inactive) for manage tab ─ */
   const loadAllMembers = useCallback(async () => {
     try {
-      // GET /members/?include_inactive=true — but our backend doesn't have this param.
-      // We get active members from the normal endpoint, and for discontinued we need
-      // a separate call. Since the backend only returns active members from GET /members/,
-      // we infer discontinued members from the attendance report (members with past records
-      // but not in active list). For the manage tab we use a practical approach:
-      // show active members with a Discontinue button, and reload after toggling.
-      const res = await getMembers();
-      setActiveMembers(res.data);
+      const [mRes, iRes] = await Promise.all([getMembers(), getInactiveMembers()]);
+      setActiveMembers(mRes.data);
+      setInactiveMembers(iRes.data);
     } catch { /* non-fatal */ }
   }, []);
 
@@ -110,7 +108,10 @@ export default function Attendance() {
   /* ── Global summary ─────────────────────────────────────── */
   const presentCount  = attendance.filter((a) =>  a.present).length;
   const absentCount   = attendance.filter((a) => !a.present).length;
-  const unmarkedCount = activeMembers.length - attendance.length;
+  // Correct formula: unmarked = active members - members already marked (present or absent)
+  // Uses activeMembers.length (not attendance.length) to avoid negative values
+  const markedIds     = new Set(attendance.map((a) => a.member_id));
+  const unmarkedCount = Math.max(0, activeMembers.length - markedIds.size);
 
   /* ── Attendance actions ─────────────────────────────────── */
   async function toggle(member, presentVal) {
@@ -273,9 +274,16 @@ export default function Attendance() {
                                     ? <span className="badge badge-success">Present</span>
                                     : <span className="badge badge-danger">Absent</span>}
                               </td>
-                              <td style={{ display: "flex", gap: 6 }}>
+                              <td style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                                 <button className="btn btn-success btn-sm" onClick={() => toggle(m, true)}>✓ Present</button>
                                 <button className="btn btn-danger btn-sm"  onClick={() => toggle(m, false)}>✗ Absent</button>
+                                {rec && !rec.present && normalizePhone(m.phone_number) && (
+                                  <button
+                                    className="btn btn-outline btn-sm"
+                                    onClick={() => openWhatsApp(m.phone_number, msgAbsent(m, selDate))}
+                                    title="Send absent notification via WhatsApp"
+                                  >📱</button>
+                                )}
                               </td>
                             </tr>
                           );
@@ -412,16 +420,40 @@ export default function Attendance() {
             </div>
           </div>
 
-          {/* ── Hint for discontinued members ─────────────── */}
-          <div style={{
-            padding: "14px 18px", background: "var(--danger-bg, #fceaea)",
-            borderRadius: 10, border: "1px solid var(--danger, #b84040)22",
-            fontSize: "0.85rem", color: "var(--text-muted)",
-          }}>
-            <strong style={{ color: "var(--danger)" }}>Discontinued members</strong> are managed from the Members page.
-            To re-activate a discontinued member, go to{" "}
-            <a href="/members" style={{ color: "var(--sage)", fontWeight: 600 }}>Members</a>
-            {" "}and use the Edit function to reactivate them, or contact an admin.
+          {/* ── Discontinued members ─────────────────────── */}
+          <div className="card" style={{ padding: 0, marginTop: 0, overflow: "hidden" }}>
+            <div style={{ padding: "10px 18px", background: "var(--danger-bg)", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontWeight: 700, fontSize: "0.93rem", color: "var(--danger)" }}>✗ Discontinued Members</span>
+              <span className="badge badge-danger" style={{ fontSize: "0.72rem" }}>{inactiveMembers.length}</span>
+            </div>
+            <div className="table-wrapper">
+              <table>
+                <thead>
+                  <tr><th style={{ width: 40 }}>#</th><th>Member</th><th>Phone</th><th>Batch</th><th>Action</th></tr>
+                </thead>
+                <tbody>
+                  {inactiveMembers.length === 0
+                    ? <tr><td colSpan="5" className="empty">No discontinued members.</td></tr>
+                    : inactiveMembers.map((m, idx) => (
+                      <tr key={m.id}>
+                        <td style={{ color: "#aaa" }}>{idx + 1}</td>
+                        <td style={{ fontWeight: 500 }}>{m.first_name} {m.last_name || ""}</td>
+                        <td style={{ color: "#888" }}>{m.phone_number || "—"}</td>
+                        <td>{m.batch_name ? <span className="badge badge-muted">{m.batch_name}</span> : <span style={{ color: "#ccc" }}>—</span>}</td>
+                        <td>
+                          <button
+                            className="btn btn-success btn-sm"
+                            onClick={() => handleToggleStatus(m)}
+                            disabled={togglingId === m.id}
+                          >
+                            {togglingId === m.id ? "…" : "↺ Reactivate"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </>
       )}

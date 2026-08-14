@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -9,31 +11,39 @@ from app.services.audit_service import log_action
 
 router = APIRouter(prefix="/users", tags=["User Management"])
 
+# Username that must never be changed via the edit form
+PROTECTED_USERNAMES = {"admin"}
+
 
 class UserResponse(BaseModel):
-    id: int
-    username: str
-    role: str
-    is_active: bool
+    id:           int
+    username:     str
+    display_name: Optional[str] = None
+    role:         str
+    is_active:    bool
 
     class Config:
         from_attributes = True
 
 
 class CreateUserRequest(BaseModel):
-    username: str = Field(min_length=3, max_length=50)
-    password: str = Field(min_length=6, max_length=100)
-    role: str = "staff"
+    username:     str = Field(min_length=3, max_length=50)
+    password:     str = Field(min_length=6, max_length=100)
+    role:         str = "staff"
+    display_name: Optional[str] = Field(default=None, max_length=100)
 
 
 class UpdateUserRequest(BaseModel):
-    role: str | None = None
-    is_active: bool | None = None
+    role:         Optional[str] = None
+    is_active:    Optional[bool] = None
+    display_name: Optional[str] = Field(default=None, max_length=100)
 
 
 class ResetPasswordRequest(BaseModel):
     new_password: str = Field(min_length=6, max_length=100)
 
+
+# ── List ───────────────────────────────────────────────────
 
 @router.get("/", response_model=list[UserResponse])
 def list_users(
@@ -42,6 +52,8 @@ def list_users(
 ):
     return db.query(User).order_by(User.id).all()
 
+
+# ── Create ─────────────────────────────────────────────────
 
 @router.post("/", response_model=UserResponse)
 def create_user(
@@ -63,10 +75,11 @@ def create_user(
         )
 
     user = User(
-        username=body.username,
-        hashed_password=hash_password(body.password),
-        role=body.role,
-        is_active=True,
+        username     = body.username,
+        display_name = body.display_name,
+        hashed_password = hash_password(body.password),
+        role         = body.role,
+        is_active    = True,
     )
     db.add(user)
 
@@ -85,6 +98,8 @@ def create_user(
     return user
 
 
+# ── Update ─────────────────────────────────────────────────
+
 @router.patch("/{user_id}", response_model=UserResponse)
 def update_user(
     user_id: int,
@@ -97,6 +112,13 @@ def update_user(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     changes = []
+
+    # Display name update — allowed for all users (does NOT change username)
+    if body.display_name is not None:
+        stripped = body.display_name.strip()
+        if user.display_name != stripped:
+            user.display_name = stripped or None
+            changes.append(f"display_name updated")
 
     if body.role is not None:
         if body.role not in ("admin", "staff"):
@@ -136,6 +158,8 @@ def update_user(
     return user
 
 
+# ── Reset password ─────────────────────────────────────────
+
 @router.post("/{user_id}/reset-password")
 def reset_password(
     user_id: int,
@@ -148,19 +172,18 @@ def reset_password(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     user.hashed_password = hash_password(body.new_password)
-    # Never log the new password itself
     log_action(
         db,
         username=admin.username,
         action="PASSWORD_RESET",
         module="Users",
-        description=(
-            f"Admin '{admin.username}' reset password for user '{user.username}'"
-        ),
+        description=f"Admin '{admin.username}' reset password for user '{user.username}'",
     )
     db.commit()
     return {"message": f"Password reset successfully for {user.username}"}
 
+
+# ── Delete ─────────────────────────────────────────────────
 
 @router.delete("/{user_id}")
 def delete_user(
@@ -168,19 +191,16 @@ def delete_user(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """Delete a user. Guards: cannot delete self, cannot delete last admin."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    # Cannot delete yourself
     if user.id == admin.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="You cannot delete your own account",
         )
 
-    # Cannot delete the last remaining admin
     if user.role == "admin":
         admin_count = db.query(User).filter(
             User.role == "admin",
@@ -199,10 +219,7 @@ def delete_user(
         username=admin.username,
         action="DELETE",
         module="Users",
-        description=(
-            f"Admin '{admin.username}' deleted user '{deleted_username}' "
-            f"(role: {user.role})"
-        ),
+        description=f"Admin '{admin.username}' deleted user '{deleted_username}' (role: {user.role})",
     )
     db.commit()
     return {"message": f"User '{deleted_username}' deleted successfully"}

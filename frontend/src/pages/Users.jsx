@@ -35,9 +35,10 @@ export default function Users() {
   const [createError, setCreateError] = useState("");
 
   /* ── Edit modal ──────────────────────────────────────── */
-  const [editTarget, setEditTarget] = useState(null);   // user object
-  const [editRole,   setEditRole]   = useState("staff");
-  const [editError,  setEditError]  = useState("");
+  const [editTarget,   setEditTarget]   = useState(null);
+  const [editRole,     setEditRole]     = useState("staff");
+  const [editDispName, setEditDispName] = useState("");
+  const [editError,    setEditError]    = useState("");
 
   /* ── Password reset modal ────────────────────────────── */
   const [pwTarget,  setPwTarget]  = useState(null);
@@ -98,6 +99,7 @@ export default function Users() {
   function openEdit(user) {
     setEditTarget(user);
     setEditRole(user.role);
+    setEditDispName(user.display_name || "");
     setEditError("");
   }
 
@@ -105,7 +107,7 @@ export default function Users() {
     e.preventDefault();
     setEditError("");
     try {
-      await updateUser(editTarget.id, { role: editRole });
+      await updateUser(editTarget.id, { role: editRole, display_name: editDispName || null });
       flash(`${editTarget.username} updated.`);
       setEditTarget(null);
       loadUsers();
@@ -234,6 +236,9 @@ export default function Users() {
                     <tr key={u.id}>
                       <td style={tdStyle}>
                         <strong>{u.username}</strong>
+                        {u.display_name && (
+                          <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{u.display_name}</div>
+                        )}
                         {isSelf && (
                           <span style={{ marginLeft: 8, fontSize: 11, color: "var(--sage, #5a7a52)", fontWeight: 600 }}>
                             (you)
@@ -305,6 +310,18 @@ export default function Users() {
             </p>
             {editError && <div className="alert alert-error" style={{ marginBottom: 12 }}>{editError}</div>}
             <form onSubmit={handleEdit}>
+              <div className="form-group">
+                <label>Display Name</label>
+                <input
+                  value={editDispName}
+                  onChange={(e) => setEditDispName(e.target.value)}
+                  placeholder={`e.g. ${editTarget.username.charAt(0).toUpperCase() + editTarget.username.slice(1)} Kumar`}
+                  maxLength={100}
+                />
+                <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: 3 }}>
+                  Username <strong>{editTarget.username}</strong> stays unchanged — this is the display name only.
+                </div>
+              </div>
               <div className="form-group">
                 <label>Role</label>
                 <select value={editRole} onChange={(e) => setEditRole(e.target.value)}>

@@ -137,16 +137,16 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Notification mini-stats — hidden when all zero ── */}
+      {/* ── WhatsApp activity mini-stats — hidden when all zero ── */}
       {data.notification_stats &&
        (data.notification_stats.sent > 0 ||
         data.notification_stats.failed > 0 ||
         data.notification_stats.skipped > 0) && (
         <div style={{ display: "flex", gap: 10, marginBottom: 22, flexWrap: "wrap" }}>
           {[
-            { label: "Reminders Sent",    value: data.notification_stats.sent,    color: "var(--success)", bg: "var(--success-bg)" },
-            { label: "Reminders Failed",  value: data.notification_stats.failed,  color: "var(--danger)",  bg: "var(--danger-bg)"  },
-            { label: "Reminders Skipped", value: data.notification_stats.skipped, color: "var(--warning)", bg: "var(--warning-bg)" },
+            { label: "WhatsApp Opened",  value: data.notification_stats.sent,    color: "var(--success)", bg: "var(--success-bg)" },
+            { label: "Delivery Failed",  value: data.notification_stats.failed,  color: "var(--danger)",  bg: "var(--danger-bg)"  },
+            { label: "Skipped",          value: data.notification_stats.skipped, color: "var(--warning)", bg: "var(--warning-bg)" },
           ].map(({ label, value, color, bg }) => (
             <div key={label} style={{
               flex: "1 1 130px", padding: "12px 16px", background: bg,
@@ -159,7 +159,6 @@ export default function Dashboard() {
           ))}
         </div>
       )}
-
       {/* ── Two-column grid ────────────────────────────────── */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 22 }}>
 

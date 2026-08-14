@@ -15,12 +15,15 @@ class Payment(Base):
 
     amount: Mapped[int] = mapped_column(Integer)
 
-    # ISO month string e.g. "2026-08" — used for monthly tracking
+    # ISO month string e.g. "2026-08"
     month: Mapped[str] = mapped_column(String(7))
 
     payment_date: Mapped[date] = mapped_column(Date)
 
     note: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # "paid" | "not_paid"  — default "paid" matches DB server_default
+    status: Mapped[str] = mapped_column(String(10), default="paid", server_default="paid")
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
