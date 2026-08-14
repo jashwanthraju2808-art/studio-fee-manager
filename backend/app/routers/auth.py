@@ -221,6 +221,18 @@ def delete_user(
     if user.id == current_user.id:
         raise HTTPException(status_code=400, detail="You cannot delete your own account")
 
+    # C3 fix: prevent deleting the last remaining admin (same guard as /users/{id})
+    if user.role == "admin":
+        admin_count = db.query(User).filter(
+            User.role == "admin",
+            User.is_active == True,  # noqa: E712
+        ).count()
+        if admin_count <= 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot delete the last admin account",
+            )
+
     deleted_username = user.username
     db.delete(user)
 

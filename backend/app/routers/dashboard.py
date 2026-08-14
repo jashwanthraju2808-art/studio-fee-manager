@@ -89,11 +89,16 @@ def get_dashboard(
 
     # ---------------------------------------------------------
     # TOTAL COLLECTED THIS MONTH
+    # Only sum payments with status = 'paid'.
+    # 'not_paid' payments must never inflate the collected figure.
     # ---------------------------------------------------------
 
     total_collected = (
         db.query(func.coalesce(func.sum(Payment.amount), 0))
-        .filter(Payment.month == current_month)
+        .filter(
+            Payment.month  == current_month,
+            Payment.status == "paid",          # C2 fix
+        )
         .scalar()
         or 0
     )
@@ -140,7 +145,8 @@ def get_dashboard(
             db.query(func.coalesce(func.sum(Payment.amount), 0))
             .filter(
                 Payment.member_id == member.id,
-                Payment.month == current_month,
+                Payment.month     == current_month,
+                Payment.status    == "paid",    # H2 fix: only 'paid' reduces the balance
             )
             .scalar()
             or 0

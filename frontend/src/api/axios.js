@@ -29,6 +29,11 @@ API.interceptors.response.use(
       localStorage.removeItem("token");
       localStorage.removeItem("username");
       localStorage.removeItem("user");
+      // Redirect to login only when not already on the login page
+      // to avoid redirect loops.
+      if (!window.location.pathname.includes("/login")) {
+        window.location.href = "/login";
+      }
     }
 
     return Promise.reject(error);
