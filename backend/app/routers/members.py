@@ -255,5 +255,35 @@ def toggle_member_status(
             f"(id={member_id}) marked as {new_status} by '{current_user.username}'"
         ),
     )
+
+    # When reactivating, create a not_paid placeholder for the current month
+    # if one does not already exist. Never create a duplicate.
+    if member.is_active and member.fee and member.fee > 0:
+        current_month = date.today().strftime("%Y-%m")
+        duplicate = db.query(Payment).filter(
+            Payment.member_id == member.id,
+            Payment.month     == current_month,
+        ).first()
+        if not duplicate:
+            db.add(Payment(
+                member_id    = member.id,
+                amount       = member.fee,
+                month        = current_month,
+                payment_date = date.today(),
+                note         = "Auto-recorded on member reactivation",
+                status       = "not_paid",
+            ))
+            log_action(
+                db,
+                username=current_user.username,
+                action="CREATE",
+                module="Payments",
+                description=(
+                    f"Auto not_paid payment of ₹{member.fee} created for "
+                    f"'{member.first_name} {member.last_name or ''}' "
+                    f"(month: {current_month}) on reactivation"
+                ),
+            )
+
     db.commit()
     return {"message": f"Member marked as {new_status}", "is_active": member.is_active}

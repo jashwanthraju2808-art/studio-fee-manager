@@ -106,11 +106,13 @@ export default function Attendance() {
   const attMap = Object.fromEntries(attendance.map((a) => [a.member_id, a]));
 
   /* ── Global summary ─────────────────────────────────────── */
-  const presentCount  = attendance.filter((a) =>  a.present).length;
-  const absentCount   = attendance.filter((a) => !a.present).length;
-  // Correct formula: unmarked = active members - members already marked (present or absent)
-  // Uses activeMembers.length (not attendance.length) to avoid negative values
-  const markedIds     = new Set(attendance.map((a) => a.member_id));
+  // Only count attendance records that belong to currently active members.
+  // Records from discontinued/inactive members must not affect these counts.
+  const activeMemberIds = new Set(activeMembers.map((m) => m.id));
+  const activeAttendance = attendance.filter((a) => activeMemberIds.has(a.member_id));
+  const presentCount  = activeAttendance.filter((a) =>  a.present).length;
+  const absentCount   = activeAttendance.filter((a) => !a.present).length;
+  const markedIds     = new Set(activeAttendance.map((a) => a.member_id));
   const unmarkedCount = Math.max(0, activeMembers.length - markedIds.size);
 
   /* ── Attendance actions ─────────────────────────────────── */
