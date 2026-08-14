@@ -137,8 +137,11 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Notification mini-stats ────────────────────────── */}
-      {data.notification_stats && (
+      {/* ── Notification mini-stats — hidden when all zero ── */}
+      {data.notification_stats &&
+       (data.notification_stats.sent > 0 ||
+        data.notification_stats.failed > 0 ||
+        data.notification_stats.skipped > 0) && (
         <div style={{ display: "flex", gap: 10, marginBottom: 22, flexWrap: "wrap" }}>
           {[
             { label: "Reminders Sent",    value: data.notification_stats.sent,    color: "var(--success)", bg: "var(--success-bg)" },
@@ -201,7 +204,10 @@ export default function Dashboard() {
 
           {data.unpaid_members.length === 0 ? (
             <div style={{ color: "var(--success)", fontSize: "0.875rem", display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 18 }}>✓</span> Everyone has paid this month!
+              {data.total_active_members === 0
+                ? <><span style={{ fontSize: 18 }}>ℹ</span> No active members yet.</>
+                : <><span style={{ fontSize: 18 }}>✓</span> Everyone has paid this month!</>
+              }
             </div>
           ) : (
             <ul style={{ listStyle: "none", padding: 0, margin: 0, maxHeight: 260, overflowY: "auto" }}>
@@ -228,39 +234,6 @@ export default function Dashboard() {
           )}
         </div>
 
-      </div>
-
-      {/* ── Recent payments ────────────────────────────────── */}
-      <div className="card">
-        <h2 style={{ marginBottom: 14, fontSize: "0.95rem", letterSpacing: "0.03em", textTransform: "uppercase", color: "var(--text-muted)", fontFamily: "var(--font-sans)", fontWeight: 600 }}>
-          Recent Payments
-        </h2>
-        {data.recent_payments.length === 0 ? (
-          <div className="empty">No payments recorded yet.</div>
-        ) : (
-          <div className="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>Member</th>
-                  <th>Amount</th>
-                  <th>Month</th>
-                  <th>Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.recent_payments.map((p) => (
-                  <tr key={p.id}>
-                    <td style={{ fontWeight: 500 }}>{p.member_name}</td>
-                    <td style={{ color: "var(--success)", fontWeight: 600 }}>₹{p.amount.toLocaleString("en-IN")}</td>
-                    <td style={{ color: "var(--text-muted)" }}>{p.month}</td>
-                    <td style={{ color: "var(--text-muted)" }}>{p.payment_date}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
 
       {/* ── Admin quick-link to Audit Logs ─────────────────── */}

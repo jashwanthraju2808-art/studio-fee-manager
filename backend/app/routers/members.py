@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.auth import get_current_user
 from app.database.dependencies import get_db
 from app.models.member import Member
+from app.models.payment import Payment
 from app.models.user import User
 from app.schemas.member import MemberCreate, MemberUpdate, MemberResponse
 from app.services.audit_service import log_action
@@ -101,6 +102,39 @@ def add_member(
     )
     db.commit()
     db.refresh(new_member)
+
+    # ── Auto first-month payment ──────────────────────────
+    # Create a payment for the current month automatically when fee > 0.
+    # Guard: never create a duplicate if one already exists for this member+month.
+    # Edit member (PUT) does NOT reach this code — safe from duplicates.
+    if new_member.fee and new_member.fee > 0:
+        current_month = date.today().strftime("%Y-%m")
+        duplicate = db.query(Payment).filter(
+            Payment.member_id == new_member.id,
+            Payment.month     == current_month,
+        ).first()
+        if not duplicate:
+            auto_pay = Payment(
+                member_id    = new_member.id,
+                amount       = new_member.fee,
+                month        = current_month,
+                payment_date = date.today(),
+                note         = "Auto-recorded on member registration",
+            )
+            db.add(auto_pay)
+            log_action(
+                db,
+                username=current_user.username,
+                action="CREATE",
+                module="Payments",
+                description=(
+                    f"Auto-payment of ₹{new_member.fee} created for "
+                    f"'{new_member.first_name} {new_member.last_name or ''}' "
+                    f"(month: {current_month}) on member registration"
+                ),
+            )
+            db.commit()
+
     return _base_q(db).filter(Member.id == new_member.id).first()
 
 
@@ -178,3 +212,37 @@ def delete_member(
     )
     db.commit()
     return {"message": "Member marked as inactive"}
+
+
+# ── Toggle active/inactive (Continue / Discontinue) ───────
+
+@router.patch("/{member_id}/status")
+def toggle_member_status(
+    member_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Toggle a member between Continued (is_active=True) and
+    Discontinued (is_active=False).  Works on both active and
+    inactive members — used from the Attendance page.
+    """
+    member = db.query(Member).filter(Member.id == member_id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    member.is_active = not member.is_active
+    new_status = "continued" if member.is_active else "discontinued"
+
+    log_action(
+        db,
+        username=current_user.username,
+        action="STATUS_CHANGE",
+        module="Members",
+        description=(
+            f"Member '{member.first_name} {member.last_name or ''}' "
+            f"(id={member_id}) marked as {new_status} by '{current_user.username}'"
+        ),
+    )
+    db.commit()
+    return {"message": f"Member marked as {new_status}", "is_active": member.is_active}

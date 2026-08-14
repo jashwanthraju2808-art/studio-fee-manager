@@ -77,8 +77,14 @@ export default function Login() {
 
         {/* Brand */}
         <div className="login-brand">
-          <div className="login-lotus">✿</div>
-          <h1 className="login-title">ANTAR YOGA</h1>
+          <div className="login-logo-wrap">
+            <img
+              src="/logo.jpg"
+              alt="Antar Yoga"
+              className="login-logo"
+            />
+          </div>
+          <h1 className="login-title" style={{ fontFamily: "var(--font-brand)", fontSize: "2.2rem", letterSpacing: "0.02em" }}>ANTAR YOGA</h1>
           <p className="login-subtitle">STUDIO MANAGEMENT</p>
         </div>
 

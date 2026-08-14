@@ -287,6 +287,22 @@ export default function Members() {
     finally { setMsgSending(false); }
   }
 
+  /* ── Bulk Deactivate ─────────────────────────────────── */
+  async function handleBulkDeactivate() {
+    const names = selectedMembers.map((m) => `${m.first_name} ${m.last_name || ""}`.trim()).join(", ");
+    if (!window.confirm(
+      `Discontinue ${selectedMembers.length} member${selectedMembers.length !== 1 ? "s" : ""}?\n\n${names}\n\nTheir payment and attendance history will be preserved.`
+    )) return;
+
+    let doneCount = 0;
+    for (const m of selectedMembers) {
+      try { await deleteMember(m.id); doneCount++; } catch { /* skip errors, continue */ }
+    }
+    flash(`${doneCount} member${doneCount !== 1 ? "s" : ""} discontinued.`, "success");
+    clearSelection();
+    load();
+  }
+
   /* ── Bulk WhatsApp ────────────────────────────────────── */
   function openBulkModal() {
     setBulkMsg(`Dear Member 🙏\n\nThis is a reminder from Antar Yoga.\n\nThank you,\n— Antar Yoga`);
@@ -351,14 +367,23 @@ export default function Members() {
             : <span style={{ color: "var(--text-light)" }}>—</span>}
         </td>
         <td style={{ fontWeight: 600, color: "var(--sage)" }}>₹{m.fee.toLocaleString("en-IN")}</td>
-        <td>
-          {(m.height_cm || m.weight_kg || m.health_notes)
-            ? <span className="badge badge-muted" title={[
-                m.height_cm    ? `Height: ${m.height_cm} cm`   : null,
-                m.weight_kg    ? `Weight: ${m.weight_kg} kg`   : null,
-                m.health_notes ? `Notes: ${m.health_notes}`    : null,
-              ].filter(Boolean).join(" · ")}>📋 On file</span>
-            : <span style={{ color: "var(--text-light)" }}>—</span>}
+        <td style={{ maxWidth: 180 }}>
+          {m.health_notes ? (
+            <span title={m.health_notes} style={{ fontSize: "0.8rem", color: "var(--text-muted)", cursor: "default" }}>
+              {m.health_notes.length > 40 ? m.health_notes.slice(0, 40) + "…" : m.health_notes}
+              {(m.height_cm || m.weight_kg) && (
+                <span style={{ display: "block", fontSize: "0.72rem", color: "var(--text-light)", marginTop: 2 }}>
+                  {[m.height_cm ? `${m.height_cm}cm` : null, m.weight_kg ? `${m.weight_kg}kg` : null].filter(Boolean).join(" · ")}
+                </span>
+              )}
+            </span>
+          ) : (m.height_cm || m.weight_kg) ? (
+            <span style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+              {[m.height_cm ? `${m.height_cm}cm` : null, m.weight_kg ? `${m.weight_kg}kg` : null].filter(Boolean).join(" · ")}
+            </span>
+          ) : (
+            <span style={{ color: "var(--text-light)" }}>—</span>
+          )}
         </td>
         <td>
           <span className={`badge ${m.is_active ? "badge-success" : "badge-danger"}`}>
@@ -493,6 +518,9 @@ export default function Members() {
               </span>
               <button className="btn btn-success btn-sm" onClick={openBulkModal}>
                 📲 Send WhatsApp
+              </button>
+              <button className="btn btn-danger btn-sm" onClick={handleBulkDeactivate}>
+                🚫 Discontinue
               </button>
               <button className="btn btn-outline btn-sm" onClick={clearSelection}>
                 ✕ Clear

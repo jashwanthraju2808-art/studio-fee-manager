@@ -162,7 +162,12 @@ export default function Layout() {
             {!logoError && logoUrl ? (
               <img src={logoUrl} alt="Logo" onError={() => setLogoError(true)} />
             ) : (
-              <span style={{ fontSize: 20, color: "var(--gold)", opacity: 0.8 }}>✿</span>
+              <img
+                src="/logo.jpg"
+                alt="Antar Yoga"
+                className="sidebar-logo-img"
+                onError={() => setLogoError(true)}
+              />
             )}
           </div>
           <input
@@ -172,7 +177,7 @@ export default function Layout() {
             style={{ display: "none" }}
             onChange={handleLogoUpload}
           />
-          <div className="sidebar-app-name">ANTAR YOGA</div>
+          <div className="sidebar-app-name" style={{ fontFamily: "var(--font-brand)", fontSize: "1.55rem", letterSpacing: "0.02em" }}>ANTAR YOGA</div>
           <div className="sidebar-app-sub">Studio Management</div>
         </div>
 

@@ -47,6 +47,8 @@
   /* Fonts */
   --font-serif:   'Playfair Display', Georgia, 'Times New Roman', serif;
   --font-sans:    'Inter', system-ui, -apple-system, sans-serif;
+  /* Handwritten font — used ONLY for ANTAR YOGA brand name */
+  --font-brand:   'Great Vibes', cursive;
 
   /* Spacing */
   --sidebar-width: 230px;
@@ -694,6 +696,31 @@ textarea:focus {
   transition: color 0.15s;
 }
 .password-eye:hover { color: var(--sage); }
+
+/* ── Logo image ───────────────────────────────────────────── */
+/* mix-blend-mode: multiply removes the cream/white background
+   making the gold symbol appear on any background colour.     */
+.login-logo-wrap {
+  margin-bottom: 14px;
+  display: flex;
+  justify-content: center;
+}
+
+.login-logo {
+  width: 110px;
+  height: 110px;
+  object-fit: contain;
+  mix-blend-mode: multiply;    /* cream bg becomes transparent */
+  border-radius: 12px;
+}
+
+.sidebar-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  mix-blend-mode: multiply;
+  filter: brightness(1.1) contrast(1.05);
+}
 
 /* ═══════════════════════════════════════════════════════════
    LOGIN PAGE

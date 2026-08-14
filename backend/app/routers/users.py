@@ -160,3 +160,49 @@ def reset_password(
     )
     db.commit()
     return {"message": f"Password reset successfully for {user.username}"}
+
+
+@router.delete("/{user_id}")
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Delete a user. Guards: cannot delete self, cannot delete last admin."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # Cannot delete yourself
+    if user.id == admin.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot delete your own account",
+        )
+
+    # Cannot delete the last remaining admin
+    if user.role == "admin":
+        admin_count = db.query(User).filter(
+            User.role == "admin",
+            User.is_active == True,  # noqa: E712
+        ).count()
+        if admin_count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Cannot delete the last admin account",
+            )
+
+    deleted_username = user.username
+    db.delete(user)
+    log_action(
+        db,
+        username=admin.username,
+        action="DELETE",
+        module="Users",
+        description=(
+            f"Admin '{admin.username}' deleted user '{deleted_username}' "
+            f"(role: {user.role})"
+        ),
+    )
+    db.commit()
+    return {"message": f"User '{deleted_username}' deleted successfully"}

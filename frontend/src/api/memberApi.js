@@ -6,3 +6,4 @@ export const getMember     = (id)            => API.get(`/members/${id}`);
 export const createMember  = (data)          => API.post("/members/", data);
 export const updateMember  = (id, data)      => API.put(`/members/${id}`, data);
 export const deleteMember  = (id)            => API.delete(`/members/${id}`);
+export const toggleMemberStatus = (id)       => API.patch(`/members/${id}/status`);

@@ -21,7 +21,7 @@ router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 class UnpaidMember(BaseModel):
     id: int
     first_name: str
-    last_name: str
+    last_name: Optional[str] = None
     phone_number: str
     fee: int
 
@@ -223,42 +223,30 @@ def get_dashboard(
 
     # ---------------------------------------------------------
     # NOTIFICATION STATISTICS
+    # Filter by active member IDs only — prevents stale skipped/failed
+    # records from discontinued members inflating the counts.
     # ---------------------------------------------------------
 
-    notif_sent = (
-        db.query(func.count(FeeNotification.id))
-        .filter(
-            FeeNotification.due_month == current_month,
-            FeeNotification.status == "sent",
-        )
-        .scalar()
-        or 0
-    )
+    active_member_ids = [m.id for m in active_members]
 
-    notif_failed = (
-        db.query(func.count(FeeNotification.id))
-        .filter(
-            FeeNotification.due_month == current_month,
-            FeeNotification.status == "failed",
+    def _notif_count(status_val: str) -> int:
+        if not active_member_ids:
+            return 0
+        return (
+            db.query(func.count(FeeNotification.id))
+            .filter(
+                FeeNotification.due_month == current_month,
+                FeeNotification.status    == status_val,
+                FeeNotification.member_id.in_(active_member_ids),
+            )
+            .scalar()
+            or 0
         )
-        .scalar()
-        or 0
-    )
-
-    notif_skipped = (
-        db.query(func.count(FeeNotification.id))
-        .filter(
-            FeeNotification.due_month == current_month,
-            FeeNotification.status == "skipped",
-        )
-        .scalar()
-        or 0
-    )
 
     notification_stats = NotificationStats(
-        sent=notif_sent,
-        failed=notif_failed,
-        skipped=notif_skipped,
+        sent=_notif_count("sent"),
+        failed=_notif_count("failed"),
+        skipped=_notif_count("skipped"),
     )
 
     # ---------------------------------------------------------

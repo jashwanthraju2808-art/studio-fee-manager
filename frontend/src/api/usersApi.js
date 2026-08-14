@@ -13,3 +13,6 @@ export const resetUserPassword = (userId, newPassword) =>
   API.post(`/users/${userId}/reset-password`, {
     new_password: newPassword,
   });
+
+export const deleteUser = (userId) =>
+  API.delete(`/users/${userId}`);
