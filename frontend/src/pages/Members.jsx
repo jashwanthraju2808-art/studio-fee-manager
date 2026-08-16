@@ -580,9 +580,19 @@ export default function Members() {
                 <label>Message *</label>
                 <textarea rows={6} value={msgText} onChange={(e) => setMsgText(e.target.value)} required style={{ resize: "vertical" }} />
               </div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
-                <button type="button" className="btn btn-outline btn-sm" onClick={() => setMsgText(msgWelcome(msgTarget))}>Welcome</button>
-                <button type="button" className="btn btn-outline btn-sm" onClick={() => setMsgText(msgFeeReminder(msgTarget, new Date().toISOString().slice(0, 7)))}>Fee Reminder</button>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>Quick templates</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {[
+                    { label: "Welcome",         text: msgWelcome(msgTarget) },
+                    { label: "Fee Reminder",    text: msgFeeReminder(msgTarget, new Date().toISOString().slice(0, 7)) },
+                    { label: "Class Cancelled", text: `Hello ${msgTarget.first_name} 🙏\n\nToday's class has been cancelled. We'll resume tomorrow as usual.\n\nSorry for the inconvenience 🙏\n— Antar Yoga` },
+                    { label: "Holiday Notice",  text: `Hello ${msgTarget.first_name} 🙏\n\nThe studio will be closed tomorrow. Classes resume the day after.\n\nThank you 🙏\n— Antar Yoga` },
+                  ].map((t) => (
+                    <button key={t.label} type="button" className="btn btn-outline btn-sm"
+                      onClick={() => setMsgText(t.text)}>{t.label}</button>
+                  ))}
+                </div>
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-outline" onClick={() => setMsgModal(false)}>Cancel</button>

@@ -699,31 +699,28 @@ textarea:focus {
 }
 .password-eye:hover { color: var(--sage); }
 
-/* ── Sidebar decorative artwork ──────────────────────────── */
-/* Place your artwork at: frontend/public/images/antar-yoga-sidebar-art.jpg  */
-/* Image silently hides itself (onError) if the file is not yet present.     */
+/* ── Sidebar decorative artwork — in-flow below footer ──────
+   Sits naturally below the Sign Out button in the sidebar's
+   flex column. The transparent PNG means no rectangular
+   background — only the gold Unalome is visible.
+   pointer-events: none = zero interference with navigation.  */
 .sidebar-art-wrap {
-  padding: 0 16px 20px;
-  margin-top: auto;
-  pointer-events: none;   /* never intercepts nav clicks */
+  padding: 12px 16px 24px;
+  pointer-events: none;
   flex-shrink: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
 }
 
 .sidebar-art {
   width: 100%;
-  max-width: 160px;
+  max-width: 170px;
   display: block;
-  margin: 0 auto;
   object-fit: contain;
-  opacity: 0.45;              /* subtle — nav is the primary element */
-  mix-blend-mode: luminosity; /* blends gold tones naturally with dark green */
-  border-radius: 8px;
-  filter: brightness(1.15) saturate(0.9);
-  transition: opacity 0.3s;
-}
-
-.sidebar-art-wrap:hover .sidebar-art {
   opacity: 0.65;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 /* ── Login logo ───────────────────────────────────────────── */
@@ -759,20 +756,20 @@ textarea:focus {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--cream-deep);
+  background: #F3E9D2;
   background-image:
-    radial-gradient(ellipse 60% 50% at 20% 30%, rgba(90,122,82,0.08) 0%, transparent 60%),
-    radial-gradient(ellipse 50% 60% at 80% 70%, rgba(196,154,74,0.06) 0%, transparent 60%);
+    radial-gradient(ellipse 60% 50% at 20% 30%, rgba(184,155,94,0.10) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 60% at 80% 70%, rgba(63,102,83,0.07) 0%, transparent 60%);
   padding: 24px;
 }
 
 .login-card {
-  background: var(--card-bg);
+  background: #FFFFFF;
   border-radius: 18px;
   padding: 44px 40px 36px;
   width: 400px;
   max-width: 100%;
-  box-shadow: var(--shadow-lg), 0 0 0 1px var(--border);
+  box-shadow: var(--shadow-lg), 0 0 0 1px rgba(184,155,94,0.15);
 }
 
 .login-brand {
@@ -793,7 +790,7 @@ textarea:focus {
   font-family: var(--font-serif);
   font-size: 1.6rem;
   font-weight: 700;
-  color: var(--text);
+  color: #26332D;
   letter-spacing: 0.08em;
   margin-bottom: 4px;
 }
@@ -801,7 +798,7 @@ textarea:focus {
 .login-subtitle {
   font-size: 0.65rem;
   font-weight: 500;
-  color: var(--text-muted);
+  color: #B89B5E;
   letter-spacing: 0.2em;
   text-transform: uppercase;
 }
@@ -822,13 +819,20 @@ textarea:focus {
   font-size: 0.9rem;
   margin-top: 8px;
   letter-spacing: 0.04em;
+  background: #3F6653;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(63,102,83,0.28);
+}
+.login-submit:hover:not(:disabled) {
+  background: #335545;
+  opacity: 1;
 }
 
 .login-footer {
   text-align: center;
   margin-top: 28px;
   font-size: 0.62rem;
-  color: var(--text-light);
+  color: #B89B5E;
   letter-spacing: 0.18em;
   text-transform: uppercase;
 }
@@ -897,6 +901,9 @@ textarea:focus {
 
   /* Hide desktop sidebar completely */
   .sidebar { display: none; }
+
+  /* Hide sidebar artwork on mobile — sidebar is gone, artwork must go too */
+  .sidebar-art-wrap { display: none; }
 
   /* Full-width main, padded for bottom nav */
   .main-content {

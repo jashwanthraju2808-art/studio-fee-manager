@@ -210,16 +210,16 @@ export default function Layout() {
           </button>
         </div>
 
-        {/* ── Decorative sidebar artwork ── */}
-        {/* Place antar-yoga-sidebar-art.jpg in frontend/public/images/ */}
+        {/* ── Unalome decorative artwork — below Sign Out, in flow ── */}
         <div className="sidebar-art-wrap" aria-hidden="true">
           <img
-            src="/images/antar-yoga-sidebar-art.jpg"
+            src="/images/antar-yoga-sidebar-art.png"
             alt=""
             className="sidebar-art"
-            onError={(e) => { e.currentTarget.style.display = "none"; }}
+            onError={(e) => { e.currentTarget.parentElement.style.display = "none"; }}
           />
         </div>
+
       </aside>
 
       {/* ══ PAGE CONTENT ═════════════════════════════════════ */}
