@@ -256,6 +256,27 @@ body {
   padding: 32px 36px;
   min-height: 100vh;
   background: var(--cream);
+  position: relative;  /* needed for ::before pseudo-element */
+}
+
+/* Unalome watermark — sits behind all content via z-index: 0
+   pointer-events: none ensures zero interference with any button or element */
+.main-content::before {
+  content: "";
+  position: fixed;
+  top: 50%;
+  left: calc(var(--sidebar-width) + 50%);
+  transform: translate(-50%, -50%);
+  width: 360px;
+  height: auto;
+  aspect-ratio: 1 / 2;   /* approx portrait ratio of the Unalome */
+  background-image: url('/images/antar-yoga-sidebar-art.png');
+  background-repeat: no-repeat;
+  background-size: contain;
+  background-position: center;
+  opacity: 0.055;          /* very subtle — pages/buttons all sit above */
+  pointer-events: none;
+  z-index: 0;
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -891,6 +912,7 @@ textarea:focus {
 @media (max-width: 1024px) {
   :root { --sidebar-width: 200px; }
   .main-content { padding: 24px 24px; }
+  .main-content::before { width: 280px; }
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -904,6 +926,13 @@ textarea:focus {
 
   /* Hide sidebar artwork on mobile — sidebar is gone, artwork must go too */
   .sidebar-art-wrap { display: none; }
+
+  /* Re-centre the main content watermark — no sidebar offset on mobile */
+  .main-content::before {
+    left: 50%;
+    width: 220px;
+    opacity: 0.045;
+  }
 
   /* Full-width main, padded for bottom nav */
   .main-content {
