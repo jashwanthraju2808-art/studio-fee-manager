@@ -198,7 +198,7 @@ def update_member(
     return _base_q(db).filter(Member.id == member_id).first()
 
 
-# ── Soft-delete (deactivate) ───────────────────────────────
+# ── Soft-delete (deactivate active member) ────────────────
 
 @router.delete("/{member_id}")
 def delete_member(
@@ -228,6 +228,43 @@ def delete_member(
     )
     db.commit()
     return {"message": "Member marked as inactive"}
+
+
+# ── Permanent hard-delete (discontinued members only) ──────
+
+@router.delete("/{member_id}/permanent")
+def permanently_delete_member(
+    member_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Permanently remove a discontinued member and all their records."""
+    member = db.query(Member).filter(
+        Member.id == member_id,
+        Member.is_active == False,  # noqa: E712
+    ).first()
+    if not member:
+        raise HTTPException(
+            status_code=404,
+            detail="Member not found or is still active. Discontinue first.",
+        )
+
+    member_name = f"{member.first_name} {member.last_name or ''}".strip()
+
+    log_action(
+        db,
+        username=current_user.username,
+        action="DELETE",
+        module="Members",
+        description=(
+            f"Member '{member_name}' (id={member_id}) permanently deleted "
+            f"by '{current_user.username}'"
+        ),
+    )
+
+    db.delete(member)
+    db.commit()
+    return {"message": f"Member '{member_name}' permanently deleted"}
 
 
 # ── Toggle Continued / Discontinued ───────────────────────

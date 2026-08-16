@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   getMembers, getInactiveMembers,
   searchMembers, createMember, updateMember,
-  deleteMember, toggleMemberStatus,
+  deleteMember, toggleMemberStatus, permanentlyDeleteMember,
 } from "../api/memberApi";
 import { getBatches } from "../api/studioApi";
 import {
@@ -47,7 +47,11 @@ function groupByBatch(members, batches) {
     const key = m.batch_id ?? "none";
     if (!groups[key]) {
       const b = m.batch_id ? batchMap[m.batch_id] : null;
-      groups[key] = { batchId: key, batchName: b ? b.name : "No Batch Assigned", startTime: b ? b.start_time : "99:99", members: [] };
+      // Use batch_name from the member directly as fallback if batchMap
+      // hasn't loaded yet (avoids empty groups on first render)
+      const batchName = (b ? b.name : null) || m.batch_name || "No Batch Assigned";
+      const startTime = b ? b.start_time : "99:99";
+      groups[key] = { batchId: key, batchName, startTime, members: [] };
     }
     groups[key].members.push(m);
   });
@@ -100,9 +104,11 @@ export default function Members() {
       const [mRes, iRes, bRes] = await Promise.all([
         getMembers(), getInactiveMembers(), getBatches(),
       ]);
+      // Set all three together to avoid intermediate renders where
+      // members are populated but batches are still empty
       setMembers(mRes.data);
-      setInactiveMembers(iRes.data);
       setBatches(bRes.data);
+      setInactiveMembers(iRes.data);
     } catch { setError("Could not load members."); }
     finally  { setLoading(false); }
   }, []);
@@ -210,6 +216,21 @@ export default function Members() {
       load();
     } catch (err) { flash(err.response?.data?.detail || "Could not reactivate.", "error"); }
     finally       { setTogglingId(null); }
+  }
+
+  /* ── Permanently delete discontinued member ────────────── */
+  async function handlePermanentDelete(m) {
+    const name = `${m.first_name} ${m.last_name || ""}`.trim();
+    if (!window.confirm(
+      `⚠ PERMANENTLY DELETE ${name}?\n\n` +
+      `This will remove the member and ALL their historical records (payments, attendance) forever.\n\n` +
+      `This action CANNOT be undone. Are you sure?`
+    )) return;
+    try {
+      await permanentlyDeleteMember(m.id);
+      flash(`${name} permanently deleted.`);
+      load();
+    } catch (err) { flash(err.response?.data?.detail || "Could not delete.", "error"); }
   }
 
   /* ── WhatsApp handlers ─────────────────────────────────── */
@@ -471,6 +492,13 @@ export default function Members() {
                               <button className="btn btn-gold btn-sm" onClick={() => handleReactivatedWA(m)} title="Send welcome-back message">↩ Welcome</button>
                             </>
                           )}
+                          <button
+                            className="btn btn-danger btn-sm"
+                            onClick={() => handlePermanentDelete(m)}
+                            title="Permanently delete this member and all records"
+                          >
+                            🗑 Delete
+                          </button>
                         </div>
                       </td>
                     </tr>

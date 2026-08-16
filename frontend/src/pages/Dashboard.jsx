@@ -167,17 +167,51 @@ export default function Dashboard() {
           <h2 style={{ marginBottom: 18, fontSize: "0.95rem", letterSpacing: "0.03em", textTransform: "uppercase", color: "var(--text-muted)", fontFamily: "var(--font-sans)", fontWeight: 600 }}>
             Collections — 6 Months
           </h2>
-          <div className="bar-chart">
-            {data.monthly_summary.map((m) => (
-              <div className="bar-col" key={m.month}>
-                <div
-                  className="bar"
-                  title={`₹${m.collected.toLocaleString("en-IN")}`}
-                  style={{ height: `${(m.collected / maxCollected) * 90}%` }}
-                />
-                <div className="bar-label">{m.month.slice(5)}</div>
-              </div>
-            ))}
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 140, padding: "0 4px" }}>
+            {data.monthly_summary.map((m) => {
+              const isCurrent = m.month === data.current_month;
+              const pct       = maxCollected > 0 ? (m.collected / maxCollected) * 100 : 0;
+              const barH      = Math.max(pct * 0.88, m.collected > 0 ? 6 : 2);
+              // "2026-08" → "Aug"
+              const [yr, mo]  = m.month.split("-");
+              const label     = new Date(Number(yr), Number(mo) - 1, 1)
+                                  .toLocaleString("en-IN", { month: "short" });
+              return (
+                <div key={m.month} style={{
+                  flex: 1, display: "flex", flexDirection: "column",
+                  alignItems: "center", justifyContent: "flex-end", height: "100%", gap: 4,
+                }}>
+                  {/* ₹ amount above bar */}
+                  <div style={{
+                    fontSize: "0.62rem", fontWeight: 600, lineHeight: 1.2, textAlign: "center",
+                    color: isCurrent ? "var(--gold)" : "var(--text-muted)",
+                    minHeight: 24, display: "flex", alignItems: "flex-end",
+                    visibility: m.collected > 0 ? "visible" : "hidden",
+                  }}>
+                    ₹{m.collected >= 1000
+                        ? (m.collected / 1000).toFixed(m.collected % 1000 === 0 ? 0 : 1) + "k"
+                        : m.collected.toLocaleString("en-IN")}
+                  </div>
+                  {/* Bar */}
+                  <div style={{
+                    width: "100%", borderRadius: "4px 4px 0 0",
+                    height: `${barH}%`,
+                    background: isCurrent
+                      ? "var(--gold)"
+                      : "var(--sage)",
+                    opacity: isCurrent ? 1 : 0.65,
+                    transition: "height 0.3s ease",
+                    minHeight: 3,
+                  }} title={`${label} ${yr}: ₹${m.collected.toLocaleString("en-IN")}`} />
+                  {/* Month label */}
+                  <div style={{
+                    fontSize: "0.7rem", fontWeight: isCurrent ? 700 : 400,
+                    color: isCurrent ? "var(--gold)" : "var(--text-muted)",
+                    marginTop: 4, whiteSpace: "nowrap",
+                  }}>{label}</div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
