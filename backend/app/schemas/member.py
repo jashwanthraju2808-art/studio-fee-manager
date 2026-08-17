@@ -47,6 +47,15 @@ class MemberUpdate(MemberCreate):
     pass
 
 
+class BatchInfo(BaseModel):
+    id: int
+    name: str
+    start_time: str
+    end_time: str
+
+    model_config = {"from_attributes": True}
+
+
 class MemberResponse(BaseModel):
     id:            int
     first_name:    str
@@ -63,14 +72,16 @@ class MemberResponse(BaseModel):
     is_active:     bool
     batch_id:      Optional[int] = None
     batch_name:    Optional[str] = None
+    batch:         Optional[BatchInfo] = None   # full batch object for start_time on frontend
     created_at:    datetime
 
     model_config = {"from_attributes": True}
 
     @classmethod
     def model_validate(cls, obj, **kwargs):
-        data = super().model_validate(obj, **kwargs)
-        # Attach batch name from relationship
+        instance = super().model_validate(obj, **kwargs)
+        # Pydantic reads the `batch` relationship automatically via from_attributes.
+        # Additionally populate batch_name as a flat convenience field.
         if hasattr(obj, "batch") and obj.batch:
-            data.batch_name = obj.batch.name
-        return data
+            instance.batch_name = obj.batch.name
+        return instance

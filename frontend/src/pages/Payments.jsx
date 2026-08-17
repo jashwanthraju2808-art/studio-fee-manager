@@ -113,12 +113,27 @@ export default function Payments() {
     }
     setSubmitting(true);
     try {
-      if (editTarget) { await updatePayment(editTarget.id, payload); flash("Payment updated."); }
-      else            { await createPayment(payload);                flash("Payment recorded."); }
+      if (editTarget) {
+        await updatePayment(editTarget.id, payload);
+        flash("Payment updated.");
+      } else {
+        await createPayment(payload);
+        flash("Payment recorded.");
+      }
       closeModal();
-      loadPayments(filterMonth);
-    } catch (err) { setFormError(err.response?.data?.detail || "Could not save payment."); }
-    finally       { setSubmitting(false); }
+      loadPayments(filterMonth);   // only reached on success — never on duplicate
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      const status = err.response?.status;
+      if (status === 409) {
+        // Duplicate — show clearly, do NOT update any state
+        setFormError(detail || "A payment for this member and month already exists.");
+      } else {
+        setFormError(detail || "Could not save payment.");
+      }
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   /* ── Delete ──────────────────────────────────────────── */

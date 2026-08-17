@@ -56,6 +56,23 @@ def add_payment(
     if not member:
         raise HTTPException(status_code=404, detail="Member not found")
 
+    # ── Duplicate guard — must happen BEFORE any insert ────
+    existing = db.query(Payment).filter(
+        Payment.member_id == payment.member_id,
+        Payment.month     == payment.month,
+    ).first()
+    if existing:
+        from datetime import datetime
+        try:
+            [yr, mo] = payment.month.split("-")
+            month_label = datetime(int(yr), int(mo), 1).strftime("%B %Y")
+        except Exception:
+            month_label = payment.month
+        raise HTTPException(
+            status_code=409,
+            detail=f"Payment already exists for {member.first_name} {member.last_name or ''} for {month_label}. Use Edit to update it.",
+        )
+
     new_payment = Payment(
         member_id    = payment.member_id,
         amount       = payment.amount,

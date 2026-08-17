@@ -46,11 +46,10 @@ function groupByBatch(members, batches) {
   members.forEach((m) => {
     const key = m.batch_id ?? "none";
     if (!groups[key]) {
-      const b = m.batch_id ? batchMap[m.batch_id] : null;
-      // Use batch_name from the member directly as fallback if batchMap
-      // hasn't loaded yet (avoids empty groups on first render)
+      // Priority: batchMap (from getBatches()) → nested m.batch → flat m.batch_name
+      const b         = m.batch_id ? (batchMap[m.batch_id] || m.batch) : null;
       const batchName = (b ? b.name : null) || m.batch_name || "No Batch Assigned";
-      const startTime = b ? b.start_time : "99:99";
+      const startTime = (b ? b.start_time : null) || "99:99";
       groups[key] = { batchId: key, batchName, startTime, members: [] };
     }
     groups[key].members.push(m);
@@ -428,22 +427,70 @@ export default function Members() {
            members.length === 0 ? <div className="card"><div className="empty">No active members.</div></div> :
            <div className="desktop-only">{groups.map((g) => <BatchSection key={g.batchId} group={g} />)}</div>
           }
-          {/* Mobile */}
+          {/* Mobile — same batch groups as desktop */}
           {!loading && members.length > 0 && (
             <div className="mobile-only">
-              {sortMembers(members).map((m, idx) => (
-                <div key={m.id} className="member-card" style={{ marginBottom: 10, border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "12px 14px", display: "flex", gap: 12, alignItems: "center", background: "#fff" }}>
-                  <div style={{ width: 42, height: 42, borderRadius: "50%", background: "var(--sage-pale)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "var(--sage)", fontSize: "1rem", flexShrink: 0 }}>{initials(m)}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600 }}><span style={{ color: "var(--text-muted)", fontSize: "0.72rem", marginRight: 6 }}>{idx + 1}.</span>{m.first_name} {m.last_name || ""}</div>
-                    <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{m.phone_number}{m.batch_name && <> · {m.batch_name}</>}</div>
-                    <div style={{ display: "flex", gap: 5, marginTop: 6, flexWrap: "wrap" }}>
-                      <button className="btn btn-outline btn-sm" onClick={() => openEdit(m)}>Edit</button>
-                      {normalizePhone(m.phone_number) && <button className="btn btn-outline btn-sm" onClick={() => handleReminderWA(m)}>📱</button>}
-                      <button className="btn btn-danger btn-sm" onClick={() => handleDelete(m)}>✕</button>
-                    </div>
+              {groups.map((g) => (
+                <div key={g.batchId} style={{ marginBottom: 16 }}>
+                  {/* Batch header */}
+                  <div style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    padding: "8px 14px", background: "var(--cream-deep)",
+                    borderRadius: "var(--radius) var(--radius) 0 0",
+                    border: "1px solid var(--border)", borderBottom: "none",
+                  }}>
+                    <span style={{ fontWeight: 700, fontSize: "0.88rem", color: "var(--text)" }}>
+                      {g.batchName}
+                    </span>
+                    <span className="badge badge-muted" style={{ fontSize: "0.7rem" }}>
+                      {g.members.length} member{g.members.length !== 1 ? "s" : ""}
+                    </span>
                   </div>
-                  <div style={{ fontWeight: 700, color: "var(--sage)", flexShrink: 0 }}>₹{m.fee.toLocaleString("en-IN")}</div>
+                  {/* Member cards */}
+                  {g.members.map((m, idx) => (
+                    <div key={m.id} style={{
+                      border: "1px solid var(--border)",
+                      borderTop: idx === 0 ? "1px solid var(--border)" : "none",
+                      borderRadius: idx === g.members.length - 1 ? "0 0 var(--radius) var(--radius)" : 0,
+                      padding: "12px 14px", display: "flex", gap: 12,
+                      alignItems: "center", background: "#fff",
+                    }}>
+                      <div style={{
+                        width: 42, height: 42, borderRadius: "50%",
+                        background: "var(--sage-pale)", display: "flex",
+                        alignItems: "center", justifyContent: "center",
+                        fontWeight: 700, color: "var(--sage)", fontSize: "1rem", flexShrink: 0,
+                      }}>{initials(m)}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600 }}>
+                          <span style={{ color: "var(--text-muted)", fontSize: "0.72rem", marginRight: 6 }}>{idx + 1}.</span>
+                          {m.first_name} {m.last_name || ""}
+                        </div>
+                        <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                          {m.phone_number}
+                          {displayAge(m) !== "—" && <> · {displayAge(m)}</>}
+                        </div>
+                        <div style={{ display: "flex", gap: 5, marginTop: 6, flexWrap: "wrap" }}>
+                          <input
+                            type="checkbox" checked={selected.has(m.id)}
+                            onChange={() => toggleOne(m.id)}
+                            style={{ cursor: "pointer", width: 15, height: 15, alignSelf: "center" }}
+                          />
+                          <button className="btn btn-outline btn-sm" onClick={() => openEdit(m)}>Edit</button>
+                          {normalizePhone(m.phone_number) && (
+                            <>
+                              <button className="btn btn-outline btn-sm" onClick={() => handleReminderWA(m)}>📱</button>
+                              <button className="btn btn-outline btn-sm" onClick={() => openMsgModal(m)}>💬</button>
+                            </>
+                          )}
+                          <button className="btn btn-danger btn-sm" onClick={() => handleDelete(m)}>✕</button>
+                        </div>
+                      </div>
+                      <div style={{ fontWeight: 700, color: "var(--sage)", flexShrink: 0 }}>
+                        ₹{m.fee.toLocaleString("en-IN")}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ))}
               <button className="fab" onClick={openAdd} aria-label="Add Member">+</button>
