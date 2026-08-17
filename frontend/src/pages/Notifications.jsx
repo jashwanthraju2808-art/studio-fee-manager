@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { getNotifications, retryNotification } from "../api/notificationApi";
+import { getNotifications, retryNotification, deleteNotification } from "../api/notificationApi";
 import { useAuth } from "../context/AuthContext";
 
 const TABS    = ["all", "sent", "failed", "skipped"];
@@ -32,6 +32,7 @@ export default function Notifications() {
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState("");
   const [retryingId, setRetryingId] = useState(null);
+  const [deletingId, setDeletingId] = useState(null);
 
   // Filters
   const [duoMonth, setDuoMonth]     = useState("");
@@ -72,6 +73,19 @@ export default function Notifications() {
       alert(e.response?.data?.detail || "Retry failed");
     } finally {
       setRetryingId(null);
+    }
+  }
+
+  async function handleDelete(id) {
+    if (!window.confirm("Delete this notification log entry? This cannot be undone.")) return;
+    setDeletingId(id);
+    try {
+      await deleteNotification(id);
+      await load();
+    } catch (e) {
+      alert(e.response?.data?.detail || "Delete failed");
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -180,15 +194,25 @@ export default function Notifications() {
                     </td>
                     {isAdmin && (
                       <td style={tdStyle}>
-                        {(n.status === "failed" || n.status === "skipped") && (
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          {(n.status === "failed" || n.status === "skipped") && (
+                            <button
+                              className="btn btn-outline btn-sm"
+                              onClick={() => handleRetry(n.id)}
+                              disabled={retryingId === n.id}
+                            >
+                              {retryingId === n.id ? "…" : "↺ Retry"}
+                            </button>
+                          )}
                           <button
-                            className="btn btn-outline btn-sm"
-                            onClick={() => handleRetry(n.id)}
-                            disabled={retryingId === n.id}
+                            className="btn btn-danger btn-sm"
+                            onClick={() => handleDelete(n.id)}
+                            disabled={deletingId === n.id}
+                            title="Delete this log entry"
                           >
-                            {retryingId === n.id ? "…" : "↺ Retry"}
+                            {deletingId === n.id ? "…" : "🗑"}
                           </button>
-                        )}
+                        </div>
                       </td>
                     )}
                   </tr>

@@ -15,3 +15,7 @@ export const getNotifications = (params = {}) =>
 /** Retry a failed/skipped notification (admin only). */
 export const retryNotification = (id) =>
   API.post(`/notifications/${id}/retry`);
+
+/** Delete a notification log entry (admin only). */
+export const deleteNotification = (id) =>
+  API.delete(`/notifications/${id}`);

@@ -472,6 +472,37 @@ def list_notifications(
     return result
 
 
+# ── Delete notification log entry ─────────────────────────────
+
+@router.delete("/{notification_id}", status_code=200)
+def delete_notification(
+    notification_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Permanently delete a notification log entry. Admin only."""
+    notif = db.query(FeeNotification).filter(
+        FeeNotification.id == notification_id
+    ).first()
+    if not notif:
+        raise HTTPException(status_code=404, detail="Notification not found")
+
+    log_action(
+        db,
+        username=current_user.username,
+        action="DELETE",
+        module="Notifications",
+        description=(
+            f"Notification log (id={notification_id}, member_id={notif.member_id}, "
+            f"month={notif.due_month}, status={notif.status}) deleted "
+            f"by '{current_user.username}'"
+        ),
+    )
+    db.delete(notif)
+    db.commit()
+    return {"message": "Notification deleted"}
+
+
 # ── Retry failed notification ──────────────────────────────────
 
 @router.post("/{notification_id}/retry")
