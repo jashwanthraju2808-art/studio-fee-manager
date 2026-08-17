@@ -304,7 +304,6 @@ export default function Members() {
         </td>
         <td>{m.phone_number}</td>
         <td>{displayAge(m)}</td>
-        <td>{m.batch_name ? <span className="badge badge-info">{m.batch_name}</span> : <span style={{ color: "var(--text-light)" }}>—</span>}</td>
         <td style={{ fontWeight: 700, color: "var(--sage)" }}>₹{m.fee.toLocaleString("en-IN")}</td>
         <td style={{ maxWidth: 160 }}>
           {m.health_notes
@@ -361,10 +360,10 @@ export default function Members() {
         {!isCollapsed && (
           <div className="table-wrapper">
             <table>
-              <thead><tr><th style={{ width: 36 }}></th><th style={{ width: 40 }}>#</th><th>Name</th><th>Phone</th><th>Age</th><th>Batch</th><th>Fee/mo</th><th>Health</th><th>Status</th><th>Actions</th></tr></thead>
+              <thead><tr><th style={{ width: 36 }}></th><th style={{ width: 40 }}>#</th><th>Name</th><th>Phone</th><th>Age</th><th>Fee/mo</th><th>Health</th><th>Status</th><th>Actions</th></tr></thead>
               <tbody>
                 {bms.length === 0
-                  ? <tr><td colSpan="10" className="empty">No members.</td></tr>
+                  ? <tr><td colSpan="9" className="empty">No members.</td></tr>
                   : bms.map((m, idx) => <MemberRow key={m.id} m={m} rowNum={idx + 1} />)}
               </tbody>
             </table>
@@ -513,7 +512,7 @@ export default function Members() {
             <div className="table-wrapper">
               <table>
                 <thead>
-                  <tr><th>#</th><th>Name</th><th>Phone</th><th>Batch</th><th>Fee/mo</th><th>Actions</th></tr>
+                  <tr><th>#</th><th>Name</th><th>Phone</th><th>Fee/mo</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
                   {sortMembers(inactiveMembers).map((m, idx) => (
@@ -521,7 +520,6 @@ export default function Members() {
                       <td style={{ color: "var(--text-light)" }}>{idx + 1}</td>
                       <td style={{ fontWeight: 600 }}>{m.first_name} {m.last_name || ""}</td>
                       <td style={{ color: "var(--text-muted)" }}>{m.phone_number || "—"}</td>
-                      <td>{m.batch_name ? <span className="badge badge-muted">{m.batch_name}</span> : <span style={{ color: "var(--text-light)" }}>—</span>}</td>
                       <td style={{ color: "var(--text-muted)" }}>₹{m.fee.toLocaleString("en-IN")}</td>
                       <td>
                         <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
